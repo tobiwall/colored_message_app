@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>MSAC</title>
+    <style>
+        .slidecontainer {
+            width: 100%;
+            /* Width of the outside container */
+        }
+
+        /* The slider itself */
+        .slider {
+            -webkit-appearance: none;
+            /* Override default CSS styles */
+            appearance: none;
+            width: 100%;
+            /* Full-width */
+            height: 25px;
+            /* Specified height */
+            background: #d3d3d3;
+            /* Grey background */
+            outline: none;
+            /* Remove outline */
+            opacity: 0.7;
+            /* Set transparency (for mouse-over effects on hover) */
+            -webkit-transition: .2s;
+            /* 0.2 seconds transition on hover */
+            transition: opacity .2s;
+        }
+
+        /* Mouse-over effects */
+        .slider:hover {
+            opacity: 1;
+            /* Fully shown on mouse-over */
+        }
+
+        /* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            /* Override default look */
+            appearance: none;
+            width: 25px;
+            /* Set a specific slider handle width */
+            height: 25px;
+            /* Slider handle height */
+            background: #04AA6D;
+            /* Green background */
+            cursor: pointer;
+            /* Cursor on hover */
+        }
+
+        .slider::-moz-range-thumb {
+            width: 25px;
+            /* Set a specific slider handle width */
+            height: 25px;
+            /* Slider handle height */
+            background: #04AA6D;
+            /* Green background */
+            cursor: pointer;
+            /* Cursor on hover */
+        }
+
+        #chatContainer {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .singleMessage {
+            display: flex;
+            width: fit-content;
+            gap: 32px;
+            /* border: blue solid 0.5px; */
+            background-color: hsl(StartValue, 100%, 50%);
+            border-radius: 4px;
+            margin-bottom: 12px;
+            padding: 8px;
+        }
+
+        .right {
+            flex-direction: row-reverse;
+            margin-left: 60%;
+        }
+
+        .left {
+
+        }
+
+        p {
+            margin: 8px;
+        }
+
+        .user {
+            color: blue;
+        }
+
+        .input {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #userInput {
+            width: 20%;
+            height: 40px;
+            border-radius: 4px;
+            margin-top: 64px;
+        }
+
+        #inputfield {
+            display: flex;
+            width: 60%;
+            height: 40px;
+            border-radius: 4px;
+            margin-top: 64px;
+        }
+
+        #sendBtn {
+            height: 44px;
+            border-radius: 4px;
+            background-color: white;
+            margin-top: 64px;
+
+            &:hover {
+                cursor: pointer;
+                background-color: #d3d3d3;
+            }
+        }
+
+        #hueDiv {
+            width: 100%;
+            height: 100px;
+            background-color: hsl(StartValue, 100%, 50%);
+        }
+    </style>
+</head>
+
+<body>
+    <p>Rotate the prism</p>
+    <p>
+    <div class="slidecontainer">
+        <input type="range" min="0" max="360" value="StartValue" class="slider" id="hueInput">
+    </div>
+    </p>
+    <p>
+    <div id="hueDiv"></div>
+    </p>
+
+    <h1>Let`s chat</h1>
+    <div id="chatContainer">
+        <div class="singleMessage">
+            <p class="user">user 1</p>
+            <p>Lorem ipsum dolor sit amet.
+            </p>
+        </div>
+        <div class="singleMessage right">
+            <p class="user">user 2</p>
+            <p>Lorem ipsum dolor sit amet.
+            </p>
+        </div>
+    </div>
+
+    <div class="input">
+        <input type="text" id="userInput" placeholder="Enter your name">
+        <input id="inputfield" type="text" placeholder="Enter your message">
+        <button onclick="checkInputs()" id="sendBtn">Send</button>
+    </div>
+</body>
+<script src="/main.js"></script>
+
+</html>
