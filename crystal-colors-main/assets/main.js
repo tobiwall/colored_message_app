@@ -20,26 +20,47 @@ async function main() {
         // }, 1000);
     }
 
+    // ws.onmessage = function (e) {
+    //     // console.log(e.data);
+    //     // check that the message is a number
+    //     if (isNaN(e.data)) {
+    //         createSingleMessage(e.data);
+    //     } else {
+    //         // get the value from the server and set the background color
+    //         output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+    //         for (let i = 0; i < singleMessageBox.length; i++) {
+    //             singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+    //         }
+    //         slider.value = e.data;
+    //     }
+    // }
+
+    let allMessages = [];
     ws.onmessage = function (e) {
-        console.log(e.data);
-        // check that the message is a number
-        if (isNaN(e.data)) {
-            createSingleMessage(e.data);
-        } else {
-            // get the value from the server and set the background color
-            output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-            for (let i = 0; i < singleMessageBox.length; i++) {
-                singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+            let data = JSON.parse(e.data);
+            if (Array.isArray(data)) {
+                createSingleMessage(e.data);
+            } else if (typeof data === 'object' && data !== null) {
+                allMessages.push(data);
+                createSingleMessage(JSON.stringify(allMessages));
             }
-            slider.value = e.data;
-        }
-    }
+            if (!isNaN(e.data)) {
+                output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+                for (let i = 0; i < singleMessageBox.length; i++) {
+                    singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+                }
+                slider.value = e.data;
+            }
+    };
 
     // Update the current slider value (each time you drag the slider handle)
     slider.oninput = function () {
         // set background color to the current value
         output.style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
         for (let i = 0; i < singleMessageBox.length; i++) {
+            if (!this.value) {
+                this.value = 180;
+            }
             singleMessageBox[i].style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
         }
         // send the value to the server
@@ -47,23 +68,31 @@ async function main() {
     }
 }
 
-let allMessages = [];
 function checkInputs() {
     let inputfield = document.getElementById("inputfield");
     let userinput = document.getElementById("userInput");
-    let message = [
-        user = userinput.value,
-        userMessage = inputfield.value,
-    ];
-    allMessages.push(message);
+    let message = {
+        user: userinput.value,
+        message: inputfield.value
+    };
 
     inputfield.value = "";
     userinput.value = "";
 
-    let messagesAsString = JSON.stringify(allMessages);
-    console.log(messagesAsString);
+    let singleMessageAsString = JSON.stringify(message);
+    ws.send(singleMessageAsString);
 
-    ws.send(messagesAsString);
+    
+    // fetch("http://127.0.0.1:8000/save_message", {
+    //     method: "POST",
+    //     headers: {
+    //         "Content_Type": "application/json"
+    //     },
+    //     body: messagesAsString
+    // })
+    //     .then(response => response.JSON())
+    //     .then(data => console.log(data))
+    //     .then(error => console.error());
 }
 
 
@@ -73,20 +102,19 @@ function createSingleMessage(messagesAsString) {
     if (messagesAsString) {
         let messageArray = JSON.parse(messagesAsString);
 
-        allMessages = messageArray;
-
         outputMessage.innerHTML = "";
-        let firstUser = messageArray[0][0];
-        for (i = 0; i < messageArray.length; i++) {
+        let firstUser = messageArray[0].user;
+        for (let i = 0; i < messageArray.length; i++) {
             outputMessage.innerHTML += `
-        <div class="singleMessage ${messageArray[i][0] === firstUser ? `left` : `right`}">
-            <p class="user">${messageArray[i][0]}</p>
-            <p>${messageArray[i][1]}</p>
+        <div class="singleMessage ${messageArray[i].user === firstUser ? `left` : `right`}">
+            <p class="user">${messageArray[i].user}</p>
+            <p>${messageArray[i].message}</p>
         </div>
     `;
         }
     }
 }
+
 
 
 

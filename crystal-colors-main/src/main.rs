@@ -8,8 +8,15 @@ use rocket::response::content;
 use rocket::*;
 use rocket_ws as ws;
 // use std::path::{Path, PathBuf};
+use ::serde::{Deserialize, Serialize};
+use serde_json;
+use std::fs::File;
+use std::io;
+use std::io::Error;
+use std::io::Read;
 use std::sync::Arc;
 use tokio::select;
+use tokio::sync::Mutex;
 
 mod msac;
 
@@ -59,6 +66,7 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
+    all_messages: &'r State<Arc<Mutex<Vec<SingleMessage>>>>,
 ) -> ws::Channel<'r> {
     let (tx, mut rx) = {
         // let mut channels = channels.write().await;
@@ -67,8 +75,22 @@ async fn echo_socket<'r>(
             .or_insert_with(|| msac::Channel::new());
         channel.add().await
     };
+
+    let messages = all_messages.lock().await.clone();
+
     ws.channel(move |mut stream| {
         Box::pin(async move {
+            for msg in &messages {
+                if let Err(_) = stream
+                    .send(rocket_ws::Message::Text(
+                        serde_json::to_string(msg).unwrap(),
+                    ))
+                    .await
+                {
+                    break;
+                }
+            }
+
             {
                 // let mut last_messages = last_messages.write().await;
                 let last_message = last_messages
@@ -84,17 +106,26 @@ async fn echo_socket<'r>(
                     }
                 }
             }
+
             loop {
                 select! {
                     message = stream.next() => {
                         if let Some(message) = message {
                             let message = message.unwrap();
+
                             // check, if the message is a string
                             if let rocket_ws::Message::Text(message) = message {
                                 tx.send(message.to_string()).await.unwrap();
-                                last_messages.insert(room.clone(), message.clone());
+
+                                match serde_json::from_str::<SingleMessage>(&message) {
+                                    Ok(new_message) => {
+                                        let mut messages = all_messages.lock().await;
+                                    messages.push(new_message.clone());
+                                    save_message_to_file(&messages).unwrap();
+                                },
+                                Err(_e) => continue,
+                                };
                             }
-                            // stream.send(rocket_ws::Message::Text(message.to_string())).await.unwrap();
                         } else {
                             break;
                         }
@@ -122,9 +153,51 @@ async fn echo_socket<'r>(
     })
 }
 
+// struct User {
+//     name: String,
+//     password: String,
+// }
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct SingleMessage {
+    user: String,
+    message: String,
+}
+
+fn save_message_to_file(messages: &Vec<SingleMessage>) -> Result<(), Error> {
+    let file = match File::create("messages.json") {
+        Ok(f) => {
+            println!("Added new file");
+            f
+        }
+        Err(e) => {
+            println!("Faild to create a messages.json");
+            return Err(e);
+        }
+    };
+
+    if let Err(e) = serde_json::to_writer(file, &messages) {
+        println!("Failed to write the message into file");
+        return Err(e.into());
+    };
+    Ok(())
+}
+
+fn read_messages_from_file() -> Result<Vec<SingleMessage>, io::Error> {
+    let mut file = File::open("messages.json")?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let messages = serde_json::from_str(&content)?;
+    println!("This is the content{content}");
+    Ok(messages)
+}
+
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {
-    let rocket = rocket::build().mount("/", rocket::routes![serve, index, echo_socket]);
+    let all_messages = Arc::new(Mutex::new(read_messages_from_file().unwrap()));
+    let rocket = rocket::build()
+        .manage(all_messages)
+        .mount("/", rocket::routes![serve, index, echo_socket]);
 
     // manage a mpmc channel for strings
     // let channel = msac::Channel::new();
