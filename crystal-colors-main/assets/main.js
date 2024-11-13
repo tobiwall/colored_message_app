@@ -12,28 +12,7 @@ async function main() {
     var protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
     ws.onopen = function () {
-        // generate a random number to send to the server
-        // const number = Math.floor(Math.random() * 100);
-        // setInterval(function () {
-        //     // send a keep-alive message to the server
-        //     ws.send(new Date().toUTCString());
-        // }, 1000);
     }
-
-    // ws.onmessage = function (e) {
-    //     // console.log(e.data);
-    //     // check that the message is a number
-    //     if (isNaN(e.data)) {
-    //         createSingleMessage(e.data);
-    //     } else {
-    //         // get the value from the server and set the background color
-    //         output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-    //         for (let i = 0; i < singleMessageBox.length; i++) {
-    //             singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-    //         }
-    //         slider.value = e.data;
-    //     }
-    // }
 
     let allMessages = [];
     ws.onmessage = function (e) {
@@ -81,18 +60,6 @@ function checkInputs() {
 
     let singleMessageAsString = JSON.stringify(message);
     ws.send(singleMessageAsString);
-
-    
-    // fetch("http://127.0.0.1:8000/save_message", {
-    //     method: "POST",
-    //     headers: {
-    //         "Content_Type": "application/json"
-    //     },
-    //     body: messagesAsString
-    // })
-    //     .then(response => response.JSON())
-    //     .then(data => console.log(data))
-    //     .then(error => console.error());
 }
 
 
@@ -114,9 +81,6 @@ function createSingleMessage(messagesAsString) {
         }
     }
 }
-
-
-
 
 // call the main function
 document.addEventListener("DOMContentLoaded", main);
