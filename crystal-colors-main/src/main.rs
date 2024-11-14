@@ -3,13 +3,11 @@ use dashmap::DashMap as HashMap;
 use rocket::fs::NamedFile;
 use rocket::futures::SinkExt;
 use rocket::futures::StreamExt;
-use rocket::info;
 use rocket::response::content;
 use rocket::*;
 use rocket_ws as ws;
 // use std::path::{Path, PathBuf};
 use ::serde::{Deserialize, Serialize};
-use serde_json;
 use std::fs::File;
 use std::io;
 use std::io::Error;
@@ -56,43 +54,38 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
-    all_messages: &'r State<Arc<Mutex<Vec<SingleMessage>>>>,
+    all_messages: &'r State<Arc<Mutex<Vec<Message>>>>,
+    color: &'r State<Arc<Mutex<String>>>,
 ) -> ws::Channel<'r> {
     let (tx, mut rx) = {
-        // let mut channels = channels.write().await;
         let channel = channels
             .entry(room.clone())
-            .or_insert_with(|| msac::Channel::new());
+            .or_insert_with(msac::Channel::new);
         channel.add().await
     };
 
     let messages = all_messages.lock().await.clone();
+    let current_color = color.lock().await.clone();
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
             for msg in &messages {
-                if let Err(_) = stream
+                if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::to_string(msg).unwrap(),
                     ))
-                    .await
+                    .await).is_err()
                 {
                     break;
                 }
             }
 
             {
-                let last_message = last_messages
-                    .entry(room.clone())
-                    .or_insert_with(|| "180".to_string());
-                if !last_message.is_empty() {
-                    info!("sending last message: {}", last_message.value());
-                    if let Err(_) = stream
-                        .send(rocket_ws::Message::Text(last_message.clone()))
-                        .await
-                    {
-                        return Ok(());
-                    }
+                if (stream
+                    .send(rocket_ws::Message::Text(current_color.clone()))
+                    .await).is_err()
+                {
+                    return Ok(());
                 }
             }
 
@@ -104,29 +97,17 @@ async fn echo_socket<'r>(
 
                             // check, if the message is a string
                             if let rocket_ws::Message::Text(message) = message {
-                                tx.send(message.to_string()).await.unwrap();
-
-                                match serde_json::from_str::<SingleMessage>(&message) {
-                                    Ok(new_message) => {
-                                        let mut messages = all_messages.lock().await;
+                                if let Ok(new_message) = serde_json::from_str::<Message>(&message) {
+                                    tx.send(message.to_string()).await.unwrap();
+                                    let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
                                     save_message_to_file(&messages).unwrap();
-                                },
-                                Err(_) => {
-                                    match serde_json::from_str::<i32>(&message) {
-                                        Ok(number) => {
-                                            // Handle the number (e.g., store it or use it in some way)
-                                            println!("Received a number: {}", number);
-                                            save_color(number.to_string()).unwrap();
-                                        },
-                                        // If it's neither a `SingleMessage` nor an integer, log the error
-                                        Err(e) => {
-                                            println!("Failed to parse message: {}", e);
-                                            continue;
-                                        }
-                                    }
+                                } else if let Ok(new_color) = message.parse::<String>() {
+                                    tx.send(new_color.clone()).await.unwrap();
+                                    let mut color_watch = color.lock().await;
+                                    *color_watch = new_color.clone();
+                                    save_color(new_color).unwrap();
                                 }
-                                };
                             }
                         } else {
                             break;
@@ -134,7 +115,7 @@ async fn echo_socket<'r>(
                     },
                     message = rx.recv() => {
                         if let Some(message) = message {
-                            if let Err(_) = stream.send(rocket_ws::Message::Text(message)).await {
+                            if (stream.send(rocket_ws::Message::Text(message)).await).is_err() {
                                 break;
                             }
                         }
@@ -161,12 +142,12 @@ async fn echo_socket<'r>(
 // }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-struct SingleMessage {
+struct Message {
     user: String,
     message: String,
 }
 
-fn save_message_to_file(messages: &Vec<SingleMessage>) -> Result<(), Error> {
+fn save_message_to_file(messages: &Vec<Message>) -> Result<(), Error> {
     let file = match File::create("messages.json") {
         Ok(f) => {
             println!("Added new file");
@@ -186,22 +167,18 @@ fn save_message_to_file(messages: &Vec<SingleMessage>) -> Result<(), Error> {
 }
 
 fn save_color(color: String) -> Result<(), Error> {
-    let file = match File::create("color.json") {
-        Ok(f) => f,
-        Err(e) => {
-            println!("Faild to create a messages.json");
-            return Err(e);
-        }
-    };
+    let file =
+        File::create("color.json").inspect_err(|_| println!("Failed to create message.json"))?;
 
-    if let Err(e) = serde_json::to_writer(file, &color) {
-        return Err(e.into());
-    }
+    // if let Err(e) = serde_json::to_writer(file, &color) {
+    //     return Err(e.into());
+    // }
+    serde_json::to_writer(file, &color)?;
 
     Ok(())
 }
 
-fn read_messages_from_file() -> Result<Vec<SingleMessage>, io::Error> {
+fn read_messages_from_file() -> Result<Vec<Message>, io::Error> {
     let mut file = File::open("messages.json")?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
@@ -210,20 +187,22 @@ fn read_messages_from_file() -> Result<Vec<SingleMessage>, io::Error> {
     Ok(messages)
 }
 
-// fn read_color_from_file() -> Result<Vec<SingleMessage>, io::Error> {
-//     let mut file = File::open("color.json")?;
-//     let mut content = String::new();
-//     file.read_to_string(&mut content)?;
-//     let messages = serde_json::from_str(&content)?;
-//     println!("This is the content{content}");
-//     Ok(messages)
-// }
+fn read_color_from_file() -> Result<String, io::Error> {
+    let mut file = File::open("color.json")?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let color = serde_json::from_str(&content)?;
+    println!("This is the color number{content}");
+    Ok(color)
+}
 
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {
     let all_messages = Arc::new(Mutex::new(read_messages_from_file().unwrap()));
+    let color = Arc::new(Mutex::new(read_color_from_file().unwrap()));
     let rocket = rocket::build()
         .manage(all_messages)
+        .manage(color)
         .mount("/", rocket::routes![serve, index, echo_socket]);
 
     // manage a mpmc channel for strings

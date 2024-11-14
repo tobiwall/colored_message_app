@@ -1,4 +1,5 @@
 var ws;
+var lastColor;
 
 // async function to get called when the page is loaded
 async function main() {
@@ -16,20 +17,21 @@ async function main() {
 
     let allMessages = [];
     ws.onmessage = function (e) {
-            let data = JSON.parse(e.data);
-            if (Array.isArray(data)) {
-                createSingleMessage(e.data);
-            } else if (typeof data === 'object' && data !== null) {
-                allMessages.push(data);
-                createSingleMessage(JSON.stringify(allMessages));
+        let data = JSON.parse(e.data);
+        if (Array.isArray(data)) {
+            createSingleMessage(e.data);
+        } else if (typeof data === 'object' && data !== null) {
+            allMessages.push(data);
+            createSingleMessage(JSON.stringify(allMessages));
+        }
+        if (!isNaN(e.data)) {
+            output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
+            for (let i = 0; i < singleMessageBox.length; i++) {
+                singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
             }
-            if (!isNaN(e.data)) {
-                output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-                for (let i = 0; i < singleMessageBox.length; i++) {
-                    singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-                }
-                slider.value = e.data;
-            }
+            slider.value = e.data;
+            lastColor = e.data;
+        }
     };
 
     // Update the current slider value (each time you drag the slider handle)
@@ -42,6 +44,7 @@ async function main() {
             }
             singleMessageBox[i].style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
         }
+        lastColor = this.value;
         // send the value to the server
         ws.send(this.value);
     }
@@ -70,6 +73,7 @@ function createSingleMessage(messagesAsString) {
         let messageArray = JSON.parse(messagesAsString);
 
         outputMessage.innerHTML = "";
+
         let firstUser = messageArray[0].user;
         for (let i = 0; i < messageArray.length; i++) {
             outputMessage.innerHTML += `
@@ -79,6 +83,14 @@ function createSingleMessage(messagesAsString) {
         </div>
     `;
         }
+
+        if (!lastColor) {
+            lastColor = 180;
+        }
+        let singleMessageElements = document.querySelectorAll('.singleMessage');
+        singleMessageElements.forEach((element) => {
+            element.style.backgroundColor = "hsl(" + lastColor + ", 100%, 50%)";
+        });
     }
 }
 

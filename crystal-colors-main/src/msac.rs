@@ -27,7 +27,7 @@ impl Channel {
                 let connections_read = connections.read().await;
                 let mut to_remove = Vec::new();
                 for (i, tx) in connections_read.iter().enumerate() {
-                    if let Err(_) = tx.send(message.clone()).await {
+                    if (tx.send(message.clone()).await).is_err() {
                         to_remove.push(i);
                     }
                 }
