@@ -1,5 +1,6 @@
 use dashmap::DashMap as HashMap;
 use messages::create_message;
+use messages::Message;
 use ::r2d2::PooledConnection;
 // use rocket::fs::relative;
 use rocket::fs::NamedFile;
@@ -22,6 +23,7 @@ use std::io::Read;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::Mutex;
+use anyhow::Result;
 
 pub mod messages;
 mod msac;
@@ -95,12 +97,12 @@ fn save_new_user(
     }
 }
 
-// fn get_messages() -> Result<Vec<Message>, diesel::result::Error> {
-//     use crystal_colors::schema::messages::dsl::*;
-//     let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
+fn get_messages() -> Result<Vec<Message>, diesel::result::Error> {
+    use crystal_colors::schema::messages::dsl::*;
+    let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
 
-//     messages.load::<Message>(&conn).map_err(|e| e)
-// }
+    messages.load::<Message>(&conn).map_err(|e| e)
+}
 
 #[get("/main.js")]
 pub async fn serve() -> Option<NamedFile> {
@@ -135,7 +137,7 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
-    all_messages: &'r State<Arc<Mutex<Vec<Message>>>>,
+    all_messages: &'r State<Arc<Mutex<Vec<MessageStruct>>>>,
     color: &'r State<Arc<Mutex<String>>>,
 ) -> ws::Channel<'r> {
     let (tx, mut rx) = {
@@ -179,11 +181,11 @@ async fn echo_socket<'r>(
 
                             // check, if the message is a string
                             if let rocket_ws::Message::Text(message) = message {
-                                if let Ok(new_message) = serde_json::from_str::<Message>(&message) {
+                                if let Ok(new_message) = serde_json::from_str::<MessageStruct>(&message) {
                                     tx.send(message.to_string()).await.unwrap();
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
-                                    // save_message_to_file(&messages).unwrap();
+                                    save_message_to_file(&messages).unwrap();
                                     handle_message(message).await;
                                 } else if let Ok(new_color) = message.parse::<String>() {
                                     tx.send(new_color.clone()).await.unwrap();
@@ -219,12 +221,12 @@ async fn echo_socket<'r>(
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-struct Message {
+struct MessageStruct {
     user: String,
     message: String,
 }
 
-fn save_message_to_file(messages: &Vec<Message>) -> Result<(), Error> {
+fn save_message_to_file(messages: &Vec<MessageStruct>) -> Result<(), Error> {
     let file = match File::create("messages.json") {
         Ok(f) => {
             println!("Added new file");
@@ -251,14 +253,14 @@ fn save_color(color: String) -> Result<(), Error> {
     Ok(())
 }
 
-fn read_messages_from_file() -> Result<Vec<Message>, io::Error> {
-    let mut file = File::open("messages.json")?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
-    let messages = serde_json::from_str(&content)?;
-    println!("This is the content{content}");
-    Ok(messages)
-}
+// fn read_messages_from_file() -> Result<Vec<MessageStruct>, io::Error> {
+//     let mut file = File::open("messages.json")?;
+//     let mut content = String::new();
+//     file.read_to_string(&mut content)?;
+//     let messages = serde_json::from_str(&content)?;
+//     println!("This is the messages: {messages:?}");
+//     Ok(messages)
+// }
 
 fn read_color_from_file() -> Result<String, io::Error> {
     let mut file = File::open("color.json")?;
@@ -269,9 +271,24 @@ fn read_color_from_file() -> Result<String, io::Error> {
     Ok(color)
 }
 
+fn get_message_db() -> Result<Vec<MessageStruct>, io::Error> {
+    let message_from_db = get_messages().unwrap();
+    let message_new = convert_messages(message_from_db);
+    println!("This is the new messages: {message_new:?}");
+
+    Ok(message_new)
+}
+
+fn convert_messages(messages: Vec<Message>) -> Vec<MessageStruct> {
+    messages.into_iter().map(|msg| MessageStruct {
+        user: msg.name,
+        message: msg.message,
+    }).collect()
+}
+
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {
-    let all_messages = Arc::new(Mutex::new(read_messages_from_file().unwrap()));
+    let all_messages = Arc::new(Mutex::new(get_message_db().unwrap()));
     let color = Arc::new(Mutex::new(read_color_from_file().unwrap()));
     let rocket = rocket::build()
         .manage(all_messages)
@@ -286,6 +303,8 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
     let rocket = rocket.manage(last_messages);
     // let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
 
-    // get_messages();
+    get_message_db()?;
+    
+    
     Ok(rocket.into())
 }
