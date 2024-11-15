@@ -1,4 +1,6 @@
 use dashmap::DashMap as HashMap;
+use messages::create_message;
+use ::r2d2::PooledConnection;
 // use rocket::fs::relative;
 use rocket::fs::NamedFile;
 use rocket::futures::SinkExt;
@@ -8,6 +10,11 @@ use rocket::*;
 use rocket_ws as ws;
 // use std::path::{Path, PathBuf};
 use ::serde::{Deserialize, Serialize};
+use diesel::pg::PgConnection;
+use diesel::prelude::*;
+use diesel::r2d2::{self, ConnectionManager};
+use once_cell::sync::Lazy;
+use r2d2::Pool;
 use std::fs::File;
 use std::io;
 use std::io::Error;
@@ -16,10 +23,84 @@ use std::sync::Arc;
 use tokio::select;
 use tokio::sync::Mutex;
 
+pub mod messages;
 mod msac;
+pub mod users;
+
+use users::create_user;
 
 type LastMessages = Arc<HashMap<String, String>>;
 type Channels = Arc<HashMap<String, msac::Channel>>;
+type DbPool = Pool<ConnectionManager<PgConnection>>;
+
+#[derive(::serde::Deserialize)]
+#[serde(tag = "type")]
+enum IncomingMessage {
+    Login { name: String, password: String },
+    NewUser { name: String, password: String },
+    Color { value: String },
+    Message { user: String, message: String },
+}
+
+async fn handle_message(message: String) {
+    let conn = POOL.get().expect("Failed to get connection from pool");
+
+    match serde_json::from_str::<IncomingMessage>(&message) {
+        Ok(IncomingMessage::Login { name, password }) => {
+            println!("Login {name}, {password}")
+        }
+        Ok(IncomingMessage::NewUser { name, password }) => {
+            println!("new user {name}, {password}");
+            save_new_user(name, password, conn);
+        }
+        Ok(IncomingMessage::Color { value }) => {
+            save_color(value).unwrap();
+        }
+        Ok(IncomingMessage::Message { user, message }) => {
+            println!("message {user}, {message}");
+            save_messages(user, message, conn);
+        }
+        Err(e) => println!("Error parsing: {e}"),
+    }
+}
+
+static POOL: Lazy<DbPool> = Lazy::new(|| {
+    dotenv::dotenv().ok();
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
+    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    r2d2::Pool::builder()
+        .build(manager)
+        .expect(&format!("Faild to create pool"))
+});
+
+fn save_messages(
+    user: String,
+    message: String,
+    connection: r2d2::PooledConnection<ConnectionManager<PgConnection>>,
+) {
+    match create_message(&connection, &user, &message) {
+        Ok(messages) => println!("This are the messages {:?}", messages),
+        Err(e) => println!("This is the save_messages error {e}"),
+    }
+}
+
+fn save_new_user(
+    name: String,
+    password: String,
+    connection: r2d2::PooledConnection<ConnectionManager<PgConnection>>,
+) {
+    match create_user(&connection, &name, &password) {
+        Ok(user) => println!("Created user: {}", user.name),
+        Err(err) => println!("Error: {}", err),
+    }
+}
+
+// fn get_messages() -> Result<Vec<Message>, diesel::result::Error> {
+//     use crystal_colors::schema::messages::dsl::*;
+//     let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
+
+//     messages.load::<Message>(&conn).map_err(|e| e)
+// }
 
 #[get("/main.js")]
 pub async fn serve() -> Option<NamedFile> {
@@ -74,16 +155,17 @@ async fn echo_socket<'r>(
                     .send(rocket_ws::Message::Text(
                         serde_json::to_string(msg).unwrap(),
                     ))
-                    .await).is_err()
+                    .await)
+                    .is_err()
                 {
                     break;
                 }
             }
-
             {
                 if (stream
                     .send(rocket_ws::Message::Text(current_color.clone()))
-                    .await).is_err()
+                    .await)
+                    .is_err()
                 {
                     return Ok(());
                 }
@@ -101,12 +183,13 @@ async fn echo_socket<'r>(
                                     tx.send(message.to_string()).await.unwrap();
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
-                                    save_message_to_file(&messages).unwrap();
+                                    // save_message_to_file(&messages).unwrap();
+                                    handle_message(message).await;
                                 } else if let Ok(new_color) = message.parse::<String>() {
                                     tx.send(new_color.clone()).await.unwrap();
                                     let mut color_watch = color.lock().await;
                                     *color_watch = new_color.clone();
-                                    save_color(new_color).unwrap();
+                                    handle_message(new_color).await;
                                 }
                             }
                         } else {
@@ -130,16 +213,10 @@ async fn echo_socket<'r>(
                 channels.remove(&room);
                 last_messages.remove(&room);
             }
-
             Ok(())
         })
     })
 }
-
-// struct User {
-//     name: String,
-//     password: String,
-// }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct Message {
@@ -169,12 +246,8 @@ fn save_message_to_file(messages: &Vec<Message>) -> Result<(), Error> {
 fn save_color(color: String) -> Result<(), Error> {
     let file =
         File::create("color.json").inspect_err(|_| println!("Failed to create message.json"))?;
-
-    // if let Err(e) = serde_json::to_writer(file, &color) {
-    //     return Err(e.into());
-    // }
     serde_json::to_writer(file, &color)?;
-
+    println!("Color {color}");
     Ok(())
 }
 
@@ -211,6 +284,8 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
     // manage a sting for the last sent message
     let last_messages: LastMessages = Arc::new(HashMap::new());
     let rocket = rocket.manage(last_messages);
+    // let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
 
+    // get_messages();
     Ok(rocket.into())
 }

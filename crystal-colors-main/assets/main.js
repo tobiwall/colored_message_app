@@ -45,8 +45,12 @@ async function main() {
             singleMessageBox[i].style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
         }
         lastColor = this.value;
-        // send the value to the server
-        ws.send(this.value);
+
+        const color = {
+            type: "Color",
+            value: this.value
+        }
+        ws.send(JSON.stringify(color));
     }
 }
 
@@ -54,15 +58,13 @@ function checkInputs() {
     let inputfield = document.getElementById("inputfield");
     let userinput = document.getElementById("userInput");
     let message = {
+        type: "Message",
         user: userinput.value,
         message: inputfield.value
     };
-
     inputfield.value = "";
     userinput.value = "";
-
-    let singleMessageAsString = JSON.stringify(message);
-    ws.send(singleMessageAsString);
+    ws.send(JSON.stringify(message));
 }
 
 
@@ -93,6 +95,53 @@ function createSingleMessage(messagesAsString) {
         });
     }
 }
+
+function signIn() {
+    let inputName = document.getElementById("inputName");
+    let inputPassword = document.getElementById("inputPassword");
+    let fullscreen_signIn = document.getElementById("signin");
+    let mainWindow = document.getElementById("mainWindow");
+
+    let name = inputName.value;
+    let password = inputPassword.value;
+
+    const new_user = {
+        type: "NewUser",
+        name: name,
+        password: password
+    };
+    ws.send(JSON.stringify(new_user));
+
+    fullscreen_signIn.classList.add("d-none");
+    mainWindow.classList.remove("d-none");
+}
+
+function changeToLogin() {
+    let fullscreen_signIn = document.getElementById("signin");
+    let fullscreen_login = document.getElementById("login");
+    fullscreen_signIn.classList.add("d-none");
+    fullscreen_login.classList.remove("d-none");
+}
+
+function login() {
+    let inputName = document.getElementById("inputName_login");
+    let inputPassword = document.getElementById("inputPassword_login");
+    let fullscreen_login = document.getElementById("login");
+    let mainWindow = document.getElementById("mainWindow");
+    let name = inputName.value;
+    let password = inputPassword.value;
+    fullscreen_login.classList.add("d-none");
+    mainWindow.classList.remove("d-none");
+
+    const loginData = {
+        type: "Login",
+        name: name,
+        password: password
+    }
+    ws.send(JSON.stringify(loginData));
+}
+
+
 
 // call the main function
 document.addEventListener("DOMContentLoaded", main);
