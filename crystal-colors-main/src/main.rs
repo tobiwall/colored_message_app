@@ -1,21 +1,21 @@
+use ::r2d2::PooledConnection;
 use dashmap::DashMap as HashMap;
 use messages::create_message;
 use messages::Message;
-use ::r2d2::PooledConnection;
-// use rocket::fs::relative;
 use rocket::fs::NamedFile;
 use rocket::futures::SinkExt;
 use rocket::futures::StreamExt;
 use rocket::response::content;
 use rocket::*;
 use rocket_ws as ws;
-// use std::path::{Path, PathBuf};
 use ::serde::{Deserialize, Serialize};
+use anyhow::Result;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
 use once_cell::sync::Lazy;
 use r2d2::Pool;
+use serde_json::Value;
 use std::fs::File;
 use std::io;
 use std::io::Error;
@@ -23,7 +23,6 @@ use std::io::Read;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::Mutex;
-use anyhow::Result;
 
 pub mod messages;
 mod msac;
@@ -49,6 +48,7 @@ async fn handle_message(message: String) {
 
     match serde_json::from_str::<IncomingMessage>(&message) {
         Ok(IncomingMessage::Login { name, password }) => {
+            println!("This is login {name}, {password}");
             println!("Login {name}, {password}")
         }
         Ok(IncomingMessage::NewUser { name, password }) => {
@@ -56,6 +56,7 @@ async fn handle_message(message: String) {
             save_new_user(name, password, conn);
         }
         Ok(IncomingMessage::Color { value }) => {
+            println!("This is the color {value}");
             save_color(value).unwrap();
         }
         Ok(IncomingMessage::Message { user, message }) => {
@@ -72,7 +73,7 @@ static POOL: Lazy<DbPool> = Lazy::new(|| {
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     r2d2::Pool::builder()
         .build(manager)
-        .expect(&format!("Faild to create pool"))
+        .expect("Failed to create pool")
 });
 
 fn save_messages(
@@ -99,9 +100,9 @@ fn save_new_user(
 
 fn get_messages() -> Result<Vec<Message>, diesel::result::Error> {
     use crystal_colors::schema::messages::dsl::*;
-    let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
-
-    messages.load::<Message>(&conn).map_err(|e| e)
+    let conn: PooledConnection<ConnectionManager<PgConnection>> =
+        POOL.get().expect("Failed to get connection from pool");
+    messages.load::<Message>(&conn)
 }
 
 #[get("/main.js")]
@@ -125,7 +126,6 @@ pub async fn index(
         .map(|x| x.clone())
         .unwrap_or("180".to_string());
     // replace "StartValue" with last message
-    // let last_message = last_message.read().await;
     file = file.replace("StartValue", &last_message);
 
     Some(content::RawHtml(file))
@@ -147,8 +147,20 @@ async fn echo_socket<'r>(
         channel.add().await
     };
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+    pub struct ColorStruct {
+        r#type: String,
+        value: String,
+    }
+
     let messages = all_messages.lock().await.clone();
-    let current_color = color.lock().await.clone();
+    let mut current_color = color.lock().await.clone();
+    let color_type = serde_json::from_str::<Value>(&current_color).unwrap();
+    if color_type["type"] == "Color" {
+        current_color = color_type["value"].as_str().unwrap().to_string();
+    }
+    let color_message = ColorStruct {r#type: "Color".to_string(), value: current_color};
+    let json_color = serde_json::to_string(&color_message).unwrap();
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
@@ -165,7 +177,7 @@ async fn echo_socket<'r>(
             }
             {
                 if (stream
-                    .send(rocket_ws::Message::Text(current_color.clone()))
+                    .send(rocket_ws::Message::Text(json_color.clone()))
                     .await)
                     .is_err()
                 {
@@ -185,14 +197,15 @@ async fn echo_socket<'r>(
                                     tx.send(message.to_string()).await.unwrap();
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
-                                    save_message_to_file(&messages).unwrap();
                                     handle_message(message).await;
-                                } else if let Ok(new_color) = message.parse::<String>() {
+                                } else {
+                                    let new_color = message.parse::<String>().unwrap();
                                     tx.send(new_color.clone()).await.unwrap();
                                     let mut color_watch = color.lock().await;
                                     *color_watch = new_color.clone();
                                     handle_message(new_color).await;
                                 }
+                            
                             }
                         } else {
                             break;
@@ -226,25 +239,6 @@ struct MessageStruct {
     message: String,
 }
 
-fn save_message_to_file(messages: &Vec<MessageStruct>) -> Result<(), Error> {
-    let file = match File::create("messages.json") {
-        Ok(f) => {
-            println!("Added new file");
-            f
-        }
-        Err(e) => {
-            println!("Faild to create a messages.json");
-            return Err(e);
-        }
-    };
-
-    if let Err(e) = serde_json::to_writer(file, &messages) {
-        println!("Failed to write the message into file");
-        return Err(e.into());
-    };
-    Ok(())
-}
-
 fn save_color(color: String) -> Result<(), Error> {
     let file =
         File::create("color.json").inspect_err(|_| println!("Failed to create message.json"))?;
@@ -252,15 +246,6 @@ fn save_color(color: String) -> Result<(), Error> {
     println!("Color {color}");
     Ok(())
 }
-
-// fn read_messages_from_file() -> Result<Vec<MessageStruct>, io::Error> {
-//     let mut file = File::open("messages.json")?;
-//     let mut content = String::new();
-//     file.read_to_string(&mut content)?;
-//     let messages = serde_json::from_str(&content)?;
-//     println!("This is the messages: {messages:?}");
-//     Ok(messages)
-// }
 
 fn read_color_from_file() -> Result<String, io::Error> {
     let mut file = File::open("color.json")?;
@@ -280,10 +265,13 @@ fn get_message_db() -> Result<Vec<MessageStruct>, io::Error> {
 }
 
 fn convert_messages(messages: Vec<Message>) -> Vec<MessageStruct> {
-    messages.into_iter().map(|msg| MessageStruct {
-        user: msg.name,
-        message: msg.message,
-    }).collect()
+    messages
+        .into_iter()
+        .map(|msg| MessageStruct {
+            user: msg.name,
+            message: msg.message,
+        })
+        .collect()
 }
 
 #[shuttle_runtime::main]
@@ -294,17 +282,12 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
         .manage(all_messages)
         .manage(color)
         .mount("/", rocket::routes![serve, index, echo_socket]);
-
     // manage a mpmc channel for strings
     let channels: Channels = Arc::new(HashMap::new());
     let rocket = rocket.manage(channels);
     // manage a sting for the last sent message
     let last_messages: LastMessages = Arc::new(HashMap::new());
     let rocket = rocket.manage(last_messages);
-    // let conn: PooledConnection<ConnectionManager<PgConnection>> = POOL.get().expect("Failed to get connection from pool");
 
-    get_message_db()?;
-    
-    
     Ok(rocket.into())
 }

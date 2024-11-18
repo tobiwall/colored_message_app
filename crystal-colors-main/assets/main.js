@@ -1,8 +1,10 @@
 var ws;
 var lastColor;
+var currentUser;
 
 // async function to get called when the page is loaded
 async function main() {
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
     // get room id from the url (localhost:8080/room/1234 or localhost:8080/room/1234/ or localhost:8080/room/1234/index.html)
     // get the part of the url after the first "room" part
     const roomId = (window.location.pathname.split("/"))[2];
@@ -17,20 +19,20 @@ async function main() {
 
     let allMessages = [];
     ws.onmessage = function (e) {
-        let data = JSON.parse(e.data);
-        if (Array.isArray(data)) {
-            createSingleMessage(e.data);
-        } else if (typeof data === 'object' && data !== null) {
+        let data;
+        try {
+            data = JSON.parse(e.data);
+        } catch {
+            console.error(e.data);
+            return;
+        }
+        if (Array.isArray(data)) createSingleMessage(e.data);
+        else if (typeof data === 'object' && data !== null && data.type !== 'Color') {
             allMessages.push(data);
             createSingleMessage(JSON.stringify(allMessages));
         }
-        if (!isNaN(e.data)) {
-            output.style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-            for (let i = 0; i < singleMessageBox.length; i++) {
-                singleMessageBox[i].style.backgroundColor = "hsl(" + e.data + ", 100%, 50%)";
-            }
-            slider.value = e.data;
-            lastColor = e.data;
+        if (data.type == 'Color') {
+            setBackgroundColor(data.value, output, singleMessageBox, slider);
         }
     };
 
@@ -54,16 +56,23 @@ async function main() {
     }
 }
 
+function setBackgroundColor(data, output, singleMessageBox, slider) {
+    output.style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
+    for (let i = 0; i < singleMessageBox.length; i++) {
+        singleMessageBox[i].style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
+    }
+    slider.value = data;
+    lastColor = data;
+}
+
 function checkInputs() {
     let inputfield = document.getElementById("inputfield");
-    let userinput = document.getElementById("userInput");
     let message = {
         type: "Message",
-        user: userinput.value,
+        user: currentUser,
         message: inputfield.value
     };
     inputfield.value = "";
-    userinput.value = "";
     ws.send(JSON.stringify(message));
 }
 
@@ -76,10 +85,9 @@ function createSingleMessage(messagesAsString) {
 
         outputMessage.innerHTML = "";
 
-        let firstUser = messageArray[0].user;
         for (let i = 0; i < messageArray.length; i++) {
             outputMessage.innerHTML += `
-        <div class="singleMessage ${messageArray[i].user === firstUser ? `left` : `right`}">
+        <div class="singleMessage ${messageArray[i].user === currentUser ? `left` : `right`}">
             <p class="user">${messageArray[i].user}</p>
             <p>${messageArray[i].message}</p>
         </div>
@@ -111,9 +119,11 @@ function signIn() {
         password: password
     };
     ws.send(JSON.stringify(new_user));
-
+    currentUser = new_user.name;
     fullscreen_signIn.classList.add("d-none");
     mainWindow.classList.remove("d-none");
+    currentUserAsString = JSON.stringify(currentUser);
+    localStorage.setItem("currentUser", currentUserAsString);
 }
 
 function changeToLogin() {
@@ -138,10 +148,36 @@ function login() {
         name: name,
         password: password
     }
-    ws.send(JSON.stringify(loginData));
+    // ws.send(JSON.stringify(loginData));
+    currentUserAsString = JSON.stringify(loginData.name);
+    localStorage.setItem("loginBool", "true");
+    localStorage.setItem("currentUser", currentUserAsString);
+    main();
 }
 
-
-
 // call the main function
-document.addEventListener("DOMContentLoaded", main);
+document.addEventListener("DOMContentLoaded", reload);
+
+function reload() {
+    let loginBool = localStorage.getItem("loginBool") === "true";
+    if (loginBool) {
+        main();
+        let fullscreen_login = document.getElementById("login");
+        let fullscreen_signIn = document.getElementById("signin");
+        let mainWindow = document.getElementById("mainWindow");
+        fullscreen_login.classList.add("d-none");
+        fullscreen_signIn.classList.add("d-none");
+        mainWindow.classList.remove("d-none");
+    }
+}
+
+function checkOut() {
+    localStorage.removeItem("loginBool");
+    localStorage.removeItem("currentUser");
+    let fullscreen_login = document.getElementById("login");
+    let fullscreen_signIn = document.getElementById("signin");
+    let mainWindow = document.getElementById("mainWindow");
+    fullscreen_login.classList.add("d-none");
+    fullscreen_signIn.classList.remove("d-none");
+    mainWindow.classList.add("d-none");
+}

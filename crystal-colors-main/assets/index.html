@@ -146,6 +146,10 @@
             gap: 8px;
         }
 
+        .checkout {
+            margin-top: 24px;
+        }
+
         #userInput {
             width: 20%;
             height: 40px;
@@ -186,7 +190,7 @@
 </head>
 
 <body>
-    <div id="mainWindow">
+    <div id="mainWindow" class="d-none">
         <p>Rotate the prism</p>
         <p>
         <div class="slidecontainer">
@@ -212,13 +216,13 @@
         </div>
 
         <div class="input">
-            <input type="text" id="userInput" placeholder="Enter your name">
             <input id="inputfield" type="text" placeholder="Enter your message">
             <button onclick="checkInputs()" id="sendBtn">Send</button>
         </div>
+        <button class="checkout" onclick="checkOut()">Check out</button>
     </div>
 
-    <div id="signin" class="fullScreen d-none">
+    <div id="signin" class="fullScreen">
         <div class="popup">
             <h1>Sign in</h1>
             <input id="inputName" type="text" placeholder="Enter your name">
