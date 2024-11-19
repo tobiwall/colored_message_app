@@ -21,7 +21,7 @@ async function main() {
             const message = messageQueue.shift();
             ws.send(JSON.stringify(message));
             console.log("Message send " + message);
-            
+
         }
 
     }
@@ -148,6 +148,7 @@ function changeToLogin() {
 }
 
 function login() {
+    main();
     let inputName = document.getElementById("inputName_login");
     let inputPassword = document.getElementById("inputPassword_login");
     let fullscreen_login = document.getElementById("login");
@@ -162,11 +163,14 @@ function login() {
         name: name,
         password: password
     }
-    // ws.send(JSON.stringify(loginData));
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(loginData));
+    } else {
+        messageQueue.push(loginData);
+    }
     currentUserAsString = JSON.stringify(loginData.name);
     localStorage.setItem("loginBool", "true");
     localStorage.setItem("currentUser", currentUserAsString);
-    main();
 }
 
 // call the main function

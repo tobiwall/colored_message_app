@@ -32,8 +32,8 @@ pub fn hash_password(password: &str) -> Result<String, Error> {
     Ok(password_hash)
 }
 
-pub fn check_password(password: &[u8], hash: &str) -> Result<(), argon2::password_hash::Error> {
-    let parsed_hash = PasswordHash::new(&hash)?;
-    let verify = Argon2::default().verify_password(password, &parsed_hash);
+pub fn check_password(password: &str, hash: &str) -> Result<(), argon2::password_hash::Error> {
+    let parsed_hash = PasswordHash::new(hash)?;
+    let verify = Argon2::default().verify_password(password.as_bytes(), &parsed_hash);
     verify
 }

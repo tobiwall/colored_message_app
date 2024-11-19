@@ -21,6 +21,3 @@ once_cell = "1.10.0"
 anyhow = "1.0"
 argon2 = "0.5"
 
-
-[databases]
-postgres = { url = "postgres://tobiaswall:tobiwall@localhost:5432/lets_chat" }

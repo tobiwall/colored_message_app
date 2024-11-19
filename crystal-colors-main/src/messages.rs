@@ -8,7 +8,7 @@ use crystal_colors::schema::messages;
 // Create a new user
 #[derive(Queryable, Insertable, Debug)]
 #[table_name = "messages"]
-pub struct Message {
+pub struct DBMessage {
     pub id: i32,
     pub name: String,
     pub message: String,
@@ -17,7 +17,7 @@ pub struct Message {
 
 #[derive(Insertable)]
 #[table_name = "messages"]
-pub struct NewMessage<'a> {
+pub struct InsertMessage<'a> {
     pub name: &'a str,
     pub message: &'a str,
 }
@@ -26,12 +26,12 @@ pub fn create_message(
     connection: &PgConnection,
     name: &str,
     message: &str,
-) -> Result<Message, diesel::result::Error> {
+) -> Result<DBMessage, diesel::result::Error> {
 
-    let new_message = NewMessage {
+    let message = InsertMessage {
         name,
         message,
     };
 
-    diesel::insert_into(messages::table).values(&new_message).get_result(connection)
+    diesel::insert_into(messages::table).values(&message).get_result(connection)
 }

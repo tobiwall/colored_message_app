@@ -12,6 +12,12 @@ pub struct Channel {
     num_connections: AtomicUsize,
 }
 
+impl Default for Channel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Channel {
     pub fn new() -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);

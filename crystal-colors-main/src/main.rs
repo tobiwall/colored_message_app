@@ -1,8 +1,9 @@
 use crystal_colors::auth;
+use crystal_colors::auth::password::check_password;
 use ::r2d2::PooledConnection;
 use dashmap::DashMap as HashMap;
 use messages::create_message;
-use messages::Message;
+use messages::DBMessage;
 use rocket::fs::NamedFile;
 use rocket::futures::SinkExt;
 use rocket::futures::StreamExt;
@@ -17,6 +18,7 @@ use diesel::r2d2::{self, ConnectionManager};
 use once_cell::sync::Lazy;
 use r2d2::Pool;
 use serde_json::Value;
+use users::User;
 use std::fs::File;
 use std::io;
 use std::io::Error;
@@ -26,7 +28,7 @@ use tokio::select;
 use tokio::sync::Mutex;
 
 pub mod messages;
-mod msac;
+pub mod msac;
 pub mod users;
 
 use users::create_user;
@@ -48,23 +50,27 @@ async fn handle_message(message: String) {
     let conn = POOL.get().expect("Failed to get connection from pool");
 
     match serde_json::from_str::<IncomingMessage>(&message) {
-        Ok(IncomingMessage::Login { name, password }) => {
-            println!("This is login {name}, {password}");
-            println!("Login {name}, {password}")
-        }
-        Ok(IncomingMessage::NewUser { name, password }) => {
-            println!("new user {name}, {password}");
-            save_new_user(name, password, conn);
-        }
-        Ok(IncomingMessage::Color { value }) => {
-            println!("This is the color {value}");
-            save_color(value).unwrap();
-        }
-        Ok(IncomingMessage::Message { user, message }) => {
-            println!("message {user}, {message}");
-            save_messages(user, message, conn);
-        }
+        Ok(IncomingMessage::Login { name, password }) => handle_login(name, password),
+        Ok(IncomingMessage::NewUser { name, password }) => save_new_user(name, password, conn),
+        Ok(IncomingMessage::Color { value }) => save_color(value).unwrap(),
+        Ok(IncomingMessage::Message { user, message }) => save_messages(user, message, conn),
         Err(e) => println!("Error parsing: {e}"),
+    }
+}
+
+fn handle_login(name: String, password: String) {
+    let password_db = get_user_password_db(name);
+    match password_db {
+        Ok(Some(res)) => {
+            let verify = check_password(&password, &res);
+            if verify == Ok(()) {
+                println!("Your login is successfully completed");
+            } else {
+                println!("Incorrect password")
+            }
+        }
+        Ok(None) => println!("User not found"),
+        Err(e) => println!("Get user failed: {}", e),
     }
 }
 
@@ -99,11 +105,18 @@ fn save_new_user(
     }
 }
 
-fn get_messages() -> Result<Vec<Message>, diesel::result::Error> {
+fn get_messages() -> Result<Vec<DBMessage>, diesel::result::Error> {
     use crystal_colors::schema::messages::dsl::*;
     let conn: PooledConnection<ConnectionManager<PgConnection>> =
         POOL.get().expect("Failed to get connection from pool");
-    messages.load::<Message>(&conn)
+    messages.load::<DBMessage>(&conn)
+}
+
+fn get_user(user_name: String) -> Result<Option<User>, diesel::result::Error> {
+    use crystal_colors::schema::users::dsl::*;
+    let conn: PooledConnection<ConnectionManager<PgConnection>> =
+        POOL.get().expect("Failed to get connection from pool");
+    users.filter(name.eq(user_name)).load::<User>(&conn).map(|mut res| res.pop())
 }
 
 #[get("/main.js")]
@@ -138,13 +151,13 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
-    all_messages: &'r State<Arc<Mutex<Vec<MessageStruct>>>>,
+    all_messages: &'r State<Arc<Mutex<Vec<FrontendMessage>>>>,
     color: &'r State<Arc<Mutex<String>>>,
 ) -> ws::Channel<'r> {
     let (tx, mut rx) = {
         let channel = channels
             .entry(room.clone())
-            .or_insert_with(msac::Channel::new);
+            .or_default();
         channel.add().await
     };
 
@@ -194,7 +207,7 @@ async fn echo_socket<'r>(
 
                             // check, if the message is a string
                             if let rocket_ws::Message::Text(message) = message {
-                                if let Ok(new_message) = serde_json::from_str::<MessageStruct>(&message) {
+                                if let Ok(new_message) = serde_json::from_str::<FrontendMessage>(&message) {
                                     tx.send(message.to_string()).await.unwrap();
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
@@ -235,7 +248,7 @@ async fn echo_socket<'r>(
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-struct MessageStruct {
+struct FrontendMessage {
     user: String,
     message: String,
 }
@@ -253,35 +266,31 @@ fn read_color_from_file() -> Result<String, io::Error> {
     let mut content = String::new();
     file.read_to_string(&mut content)?;
     let color = serde_json::from_str(&content)?;
-    println!("This is the color number{content}");
     Ok(color)
 }
 
-fn get_message_db() -> Result<Vec<MessageStruct>, io::Error> {
+fn get_message_db() -> Result<Vec<FrontendMessage>, io::Error> {
     let message_from_db = get_messages().unwrap();
     let message_new = convert_messages(message_from_db);
-    println!("This is the new messages: {message_new:?}");
-
     Ok(message_new)
 }
 
-fn convert_messages(messages: Vec<Message>) -> Vec<MessageStruct> {
+fn get_user_password_db(name: String) -> Result<Option<String>, anyhow::Error> {
+    let user_from_db = get_user(name)?;
+        if let Some(user) = user_from_db {
+            return Ok(Some(user.password));
+        }
+        Ok(None)
+}
+
+fn convert_messages(messages: Vec<DBMessage>) -> Vec<FrontendMessage> {
     messages
         .into_iter()
-        .map(|msg| MessageStruct {
+        .map(|msg| FrontendMessage {
             user: msg.name,
             message: msg.message,
         })
         .collect()
-}
-
-fn test_hash_password() {
-    let password = "hallo";
-    let test_passswort = "hallo";
-    let result = auth::password::hash_password(password).unwrap();
-    println!("This is the hash password {:?}", result);
-    let verify = auth::password::check_password(test_passswort.as_bytes(), &result);
-    println!("verify: {verify:?}");
 }
 
 fn set_hash_password(password: &str) -> String {
@@ -302,6 +311,5 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
     // manage a sting for the last sent message
     let last_messages: LastMessages = Arc::new(HashMap::new());
     let rocket = rocket.manage(last_messages);
-    test_hash_password();
     Ok(rocket.into())
 }
