@@ -1,11 +1,14 @@
 
+use crystal_colors::auth;
 use diesel::{prelude::*, Queryable, Insertable};
 use diesel::pg::PgConnection;
 use crystal_colors::schema::users;
 
+use crate::set_hash_password;
+
 
 // Create a new user
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, Debug)]
 #[table_name = "users"]
 pub struct User {
     pub id: i32,
@@ -28,7 +31,7 @@ pub fn create_user(
 
     let new_user = NewUser {
         name: name.to_string(),
-        password: password.to_string(),
+        password: set_hash_password(password),
     };
 
     diesel::insert_into(users::table).values(&new_user).get_result(connection)

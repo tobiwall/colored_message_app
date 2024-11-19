@@ -1,3 +1,4 @@
+use crystal_colors::auth;
 use ::r2d2::PooledConnection;
 use dashmap::DashMap as HashMap;
 use messages::create_message;
@@ -274,6 +275,19 @@ fn convert_messages(messages: Vec<Message>) -> Vec<MessageStruct> {
         .collect()
 }
 
+fn test_hash_password() {
+    let password = "hallo";
+    let test_passswort = "hallo";
+    let result = auth::password::hash_password(password).unwrap();
+    println!("This is the hash password {:?}", result);
+    let verify = auth::password::check_password(test_passswort.as_bytes(), &result);
+    println!("verify: {verify:?}");
+}
+
+fn set_hash_password(password: &str) -> String {
+    auth::password::hash_password(password).unwrap()
+}
+
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {
     let all_messages = Arc::new(Mutex::new(get_message_db().unwrap()));
@@ -288,6 +302,6 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
     // manage a sting for the last sent message
     let last_messages: LastMessages = Arc::new(HashMap::new());
     let rocket = rocket.manage(last_messages);
-
+    test_hash_password();
     Ok(rocket.into())
 }

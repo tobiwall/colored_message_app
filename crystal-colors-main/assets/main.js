@@ -1,6 +1,7 @@
 var ws;
 var lastColor;
 var currentUser;
+messageQueue = [];
 
 // async function to get called when the page is loaded
 async function main() {
@@ -15,6 +16,14 @@ async function main() {
     var protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
     ws.onopen = function () {
+        console.log("Open ws" + ws);
+        while (messageQueue.length > 0) {
+            const message = messageQueue.shift();
+            ws.send(JSON.stringify(message));
+            console.log("Message send " + message);
+            
+        }
+
     }
 
     let allMessages = [];
@@ -104,7 +113,8 @@ function createSingleMessage(messagesAsString) {
     }
 }
 
-function signIn() {
+function signUp() {
+    main();
     let inputName = document.getElementById("inputName");
     let inputPassword = document.getElementById("inputPassword");
     let fullscreen_signIn = document.getElementById("signin");
@@ -118,7 +128,11 @@ function signIn() {
         name: name,
         password: password
     };
-    ws.send(JSON.stringify(new_user));
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(new_user));
+    } else {
+        messageQueue.push(new_user);
+    }
     currentUser = new_user.name;
     fullscreen_signIn.classList.add("d-none");
     mainWindow.classList.remove("d-none");
