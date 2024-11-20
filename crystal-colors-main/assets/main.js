@@ -6,6 +6,8 @@ messageQueue = [];
 // async function to get called when the page is loaded
 async function main() {
     currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    console.log("This is the current user: " + currentUser);
+    
     // get room id from the url (localhost:8080/room/1234 or localhost:8080/room/1234/ or localhost:8080/room/1234/index.html)
     // get the part of the url after the first "room" part
     const roomId = (window.location.pathname.split("/"))[2];
@@ -29,8 +31,10 @@ async function main() {
     let allMessages = [];
     ws.onmessage = function (e) {
         let data;
+
         try {
             data = JSON.parse(e.data);
+            console.log("This is onmessage: " + data);
         } catch {
             console.error(e.data);
             return;
@@ -114,7 +118,6 @@ function createSingleMessage(messagesAsString) {
 }
 
 function signUp() {
-    main();
     let inputName = document.getElementById("inputName");
     let inputPassword = document.getElementById("inputPassword");
     let fullscreen_signIn = document.getElementById("signin");
@@ -128,6 +131,7 @@ function signUp() {
         name: name,
         password: password
     };
+    main();
     if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(new_user));
     } else {
@@ -138,6 +142,8 @@ function signUp() {
     mainWindow.classList.remove("d-none");
     currentUserAsString = JSON.stringify(currentUser);
     localStorage.setItem("currentUser", currentUserAsString);
+    inputName.value = "";
+    inputPassword.value = "";
 }
 
 function changeToLogin() {
@@ -148,29 +154,31 @@ function changeToLogin() {
 }
 
 function login() {
-    main();
     let inputName = document.getElementById("inputName_login");
     let inputPassword = document.getElementById("inputPassword_login");
     let fullscreen_login = document.getElementById("login");
     let mainWindow = document.getElementById("mainWindow");
     let name = inputName.value;
     let password = inputPassword.value;
-    fullscreen_login.classList.add("d-none");
-    mainWindow.classList.remove("d-none");
 
     const loginData = {
         type: "Login",
         name: name,
         password: password
     }
+    currentUserAsString = JSON.stringify(loginData.name);
+    localStorage.setItem("loginBool", "true");
+    localStorage.setItem("currentUser", currentUserAsString);
+    main();
     if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(loginData));
     } else {
         messageQueue.push(loginData);
     }
-    currentUserAsString = JSON.stringify(loginData.name);
-    localStorage.setItem("loginBool", "true");
-    localStorage.setItem("currentUser", currentUserAsString);
+    inputName.value = "";
+    inputPassword.value = "";
+    fullscreen_login.classList.add("d-none");
+    mainWindow.classList.remove("d-none");
 }
 
 // call the main function

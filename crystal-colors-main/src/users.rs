@@ -3,7 +3,7 @@ use diesel::{prelude::*, Queryable, Insertable};
 use diesel::pg::PgConnection;
 use crystal_colors::schema::users;
 use diesel::result::Error;
-use crate::set_hash_password;
+use crate::database_handling::set_hash_password;
 
 // Create a new user
 #[derive(Queryable, Insertable, Debug)]
