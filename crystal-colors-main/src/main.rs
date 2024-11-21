@@ -41,15 +41,13 @@ enum IncomingMessage {
     Message { user: String, message: String },
 }
 
-async fn handle_message(message: String, pool: &State<DbPool>) {
+async fn handle_message(message: String, pool: &State<DbPool>, tx: &tokio::sync::mpsc::Sender<String>) {
     let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
     match serde_json::from_str::<IncomingMessage>(&message) {
-        Ok(IncomingMessage::Login { name, password }) => {
-            let _login_bool = database_handling::handle_login(name, password, conn);
-        },
-        Ok(IncomingMessage::NewUser { name, password }) => database_handling::save_new_user(name, password, conn),
-        Ok(IncomingMessage::Color { value }) => save_color(value).unwrap(),
-        Ok(IncomingMessage::Message { user, message }) => database_handling::save_messages(user, message, conn),
+        Ok(IncomingMessage::Login { name, password }) => database_handling::handle_login(name, password, conn, tx).await,
+        Ok(IncomingMessage::NewUser { name, password }) => database_handling::save_new_user(name, password, conn, tx).await,
+        Ok(IncomingMessage::Color { value }) => save_color(value.clone(), tx, message).await.unwrap(),
+        Ok(IncomingMessage::Message { user, message }) => database_handling::save_messages(user, message, conn, tx).await,
         Err(e) => println!("Error parsing: {e}"),
     }
 }
@@ -117,7 +115,11 @@ async fn echo_socket<'r>(
             for msg in &messages {
                 if (stream
                     .send(rocket_ws::Message::Text(
-                        serde_json::to_string(msg).unwrap(),
+                        serde_json::json!({
+                            "type": "MessageResponse",
+                            "chat_message": msg.message,
+                            "user": msg.user
+                        }).to_string(),
                     ))
                     .await)
                     .is_err()
@@ -140,22 +142,26 @@ async fn echo_socket<'r>(
                     message = stream.next() => {
                         if let Some(message) = message {
                             let message = message.unwrap();
-
-                            // check, if the message is a string
                             if let rocket_ws::Message::Text(message) = message {
                                 if let Ok(new_message) = serde_json::from_str::<database_handling::FrontendMessage>(&message) {
-                                    tx.send(message.to_string()).await.unwrap();
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
-                                    handle_message(message, pool).await;
+                                    handle_message(message, pool, &tx).await;
                                 } else {
-                                    let new_color = message.parse::<String>().unwrap();
-                                    tx.send(new_color.clone()).await.unwrap();
-                                    let mut color_watch = color.lock().await;
-                                    *color_watch = new_color.clone();
-                                    handle_message(new_color, pool).await;
+                                    let json_value: Value = serde_json::from_str(&message).unwrap();
+                                    if let Some(type_value) = json_value.get("type") {
+                                        if let Some(type_str) = type_value.as_str() {
+                                            if type_str == "Color" {
+                                                let new_color = message.parse::<String>().unwrap();
+                                                let mut color_watch = color.lock().await;
+                                                *color_watch = new_color.clone();
+                                                handle_message(new_color, pool, &tx).await;
+                                            } else if type_str == "Login" {
+                                                handle_message(message, pool, &tx).await;
+                                            }
+                                        }
+                                    }
                                 }
-                            
                             }
                         } else {
                             break;
@@ -185,11 +191,12 @@ async fn echo_socket<'r>(
     })
 }
 
-fn save_color(color: String) -> Result<(), Error> {
+async fn save_color(color: String, tx: &tokio::sync::mpsc::Sender<String>, message: String) -> Result<(), Error> {
     let file =
         File::create("color.json").inspect_err(|_| println!("Failed to create message.json"))?;
     serde_json::to_writer(file, &color)?;
     println!("Color {color}");
+    tx.send(message.clone()).await.unwrap();
     Ok(())
 }
 

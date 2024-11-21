@@ -19,27 +19,64 @@ use users::User;
 type DbPool = Pool<ConnectionManager<PgConnection>>;
 type DBConnection = PooledConnection<ConnectionManager<PgConnection>>;
 
-pub fn handle_login(name: String, password: String, conn: DBConnection) -> bool {
+#[derive(serde::Serialize, Debug)]
+pub struct LoginResult {
+    pub success: bool,
+    pub message: String,
+}
+
+pub async fn handle_login(
+    name: String,
+    password: String,
+    conn: DBConnection,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) {
     let password_db = get_user_password_db(name, conn);
+    let login_result: LoginResult;
     match password_db {
         Ok(Some(res)) => {
             let verify = check_password(&password, &res);
             if verify == Ok(()) {
                 println!("Your login is successfully completed");
-                true
+                login_result = LoginResult {
+                    success: true,
+                    message: "Your login is successfully completed".to_string(),
+                }
             } else {
                 println!("Incorrect password");
-                false
+                login_result = LoginResult {
+                    success: false,
+                    message: "Incorrect password".to_string(),
+                }
             }
         }
         Ok(None) => {
             println!("User not found");
-            false
+            login_result = LoginResult {
+                success: false,
+                message: "User not found".to_string(),
+            }
         }
         Err(e) => {
             println!("Get user failed: {}", e);
-            false
-        } 
+            login_result = LoginResult {
+                success: false,
+                message: format!("Get user failed: {}", e),
+            }
+        }
+    }
+    if let Err(e) = tx
+        .send(
+            serde_json::json!({
+                "type": "LoginResponse",
+                "success": login_result.success,
+                "login_message": login_result.message
+            })
+            .to_string(),
+        )
+        .await
+    {
+        println!("Failed to send message: {e}");
     }
 }
 
@@ -59,24 +96,90 @@ fn get_user(user_name: String, conn: DBConnection) -> Result<Option<User>, diese
         .map(|mut res| res.pop())
 }
 
-pub fn save_messages(user: String, message: String, connection: DBConnection) {
+pub async fn save_messages(
+    user: String,
+    message: String,
+    connection: DBConnection,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) {
+    let frontend_message: FrontendMessage;
     match create_message(&connection, &user, &message) {
-        Ok(messages) => println!("This are the messages {:?}", messages),
-        Err(e) => println!("This is the save_messages error {e}"),
+        Ok(message) => {
+            frontend_message = FrontendMessage {
+                user: message.name,
+                message: message.message,
+            }
+        }
+        Err(e) => {
+            frontend_message = FrontendMessage {
+                user: e.to_string(),
+                message: e.to_string(),
+            };
+            println!("This is the save_messages error {e}")
+        }
+    };
+    if let Err(e) = tx
+        .send(
+            serde_json::json!({
+                "type": "MessageResponse",
+                "chat_message": frontend_message.message,
+                "user": frontend_message.user
+            })
+            .to_string(),
+        )
+        .await
+    {
+        println!("Failed to send message: {e}");
     }
 }
 
-pub fn save_new_user(name: String, password: String, connection: DBConnection) {
+struct Signup {
+    success: bool,
+    message: String,
+}
+
+pub async fn save_new_user(
+    name: String,
+    password: String,
+    connection: DBConnection,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) {
+    let signup_result: Signup;
     match create_user(&connection, &name, &password) {
-        Ok(user) => println!("Created user: {}", user.name),
-        Err(err) => println!("Error: {}", err),
+        Ok(user) => {
+            println!("Created user: {}", user.name);
+            signup_result = Signup {
+                success: true,
+                message: format!("Created user").to_string(),
+            };
+        }
+        Err(err) => {
+            println!("Error: {}", err);
+            signup_result = Signup {
+                success: false,
+                message: "User with this name already exists.".to_string(),
+            };
+        }
+    }
+    if let Err(e) = tx
+        .send(
+            serde_json::json!({
+                "type": "NewUserResponse",
+                "success": signup_result.success,
+                "signup_message": signup_result.message
+            })
+            .to_string(),
+        )
+        .await
+    {
+        println!("Failed to send message: {e}");
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct FrontendMessage {
-    user: String,
-    message: String,
+    pub user: String,
+    pub message: String,
 }
 
 pub fn get_message_db(pool: &DbPool) -> Result<Vec<FrontendMessage>, io::Error> {
