@@ -6,7 +6,7 @@ use crystal_colors::schema::messages;
 
 
 // Create a new user
-#[derive(Queryable, Insertable, Debug)]
+#[derive(Queryable, Insertable, Debug, Clone, serde::Deserialize)]
 #[table_name = "messages"]
 pub struct DBMessage {
     pub id: i32,

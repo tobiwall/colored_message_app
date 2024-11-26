@@ -144,23 +144,22 @@ pub async fn save_new_user(
     connection: DBConnection,
     tx: &tokio::sync::mpsc::Sender<String>,
 ) {
-    let signup_result: Signup;
-    match create_user(&connection, &name, &password) {
+    let signup_result: Signup = match create_user(&connection, &name, &password) {
         Ok(user) => {
             println!("Created user: {}", user.name);
-            signup_result = Signup {
+            Signup {
                 success: true,
-                message: format!("Created user").to_string(),
-            };
+                message: "Created user".to_string(),
+            }
         }
         Err(err) => {
             println!("Error: {}", err);
-            signup_result = Signup {
+            Signup {
                 success: false,
                 message: "User with this name already exists.".to_string(),
-            };
+            }
         }
-    }
+    };
     if let Err(e) = tx
         .send(
             serde_json::json!({

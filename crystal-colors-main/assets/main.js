@@ -2,11 +2,11 @@
 var ws;
 var lastColor;
 var currentUser;
+
 // async function to get called when the page is loaded
 async function main() {
     currentUser = JSON.parse(localStorage.getItem("currentUser"));
     // get room id from the url (localhost:8080/room/1234 or localhost:8080/room/1234/ or localhost:8080/room/1234/index.html)
-    // get the part of the url after the first "room" part
     const roomId = (window.location.pathname.split("/"))[2];
     var slider = document.getElementById("hueInput");
     var singleMessageBox = document.getElementsByClassName("singleMessage");
@@ -16,7 +16,6 @@ async function main() {
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
 
     let allMessages = [];
-
     ws.onmessage = async function (e) {
         let data;
         try {
@@ -90,11 +89,13 @@ function waitForSocketOpen(socket) {
 }
 
 async function handleLoginResponse(login) {
-    if (login.success == true) showMainScreen();
-    else localStorage.setItem("login_success", false);
-    console.log("This is login: " + login.login_message);
-    showPopup(login);
-    // alert(login.login_message);
+    let userLogedin = localStorage.getItem("userLogedin");
+    if (!userLogedin) {
+        if (login.success == true) showMainScreen();
+        else localStorage.setItem("login_success", false);
+        console.log("This is login: " + login.login_message);
+        showPopup(login);
+    }
 }
 
 async function handleNewUserResponse(signup) {
@@ -111,12 +112,8 @@ async function handleMessageResponse(message, allMessages) {
 
 function setBackgroundColor(data, output, singleMessageBox, slider) {
     output.style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
-    for (let i = 0; i < singleMessageBox.length; i++) {
-        singleMessageBox[i].style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
-    }
+    for (let i = 0; i < singleMessageBox.length; i++) { singleMessageBox[i].style.backgroundColor = "hsl(" + data + ", 100%, 50%)"; }
     if (!isNaN(data)) {
-        console.log("data: " + data);
-
         slider.value = data;
         lastColor = data;
         localStorage.setItem("currentColor", lastColor);
@@ -135,40 +132,40 @@ function checkInputs() {
 }
 
 function createSingleMessage(messagesAsString) {
-    let outputMessage = document.getElementById("chatContainer");
     if (messagesAsString) {
-        let messageArray = JSON.parse(messagesAsString);
-        outputMessage.innerHTML = "";
-        for (let i = 0; i < messageArray.length; i++) {
-            outputMessage.innerHTML += `
-        <div class="singleMessage ${messageArray[i].user === currentUser ? `left` : `right`}">
-            <p class="user">${messageArray[i].user}</p>
-            <p>${messageArray[i].chat_message}</p>
-        </div>
-    `;
-        }
+        renderMessageBox(messagesAsString);
         if (!lastColor) {
-            console.log("This is the standard color start");
             let colorLocalStorage = localStorage.getItem("currentColor");
-            console.log("This is the standard color middle: " + colorLocalStorage);
-            if (colorLocalStorage) {
-                lastColor = colorLocalStorage;
-                var output = document.getElementById("hueDiv");
-                var slider = document.getElementById("hueInput");
-                output.style.backgroundColor = "hsl(" + lastColor + ", 100%, 50%)";
-                slider.value = lastColor;
-            }
-            else {
-                console.log("This is the standard color");
-
-                lastColor = 180;
-            }
+            if (colorLocalStorage) setColorAndSlider(colorLocalStorage);
+            else lastColor = 180;
         }
         let singleMessageElements = document.querySelectorAll('.singleMessage');
         singleMessageElements.forEach((element) => {
             element.style.backgroundColor = "hsl(" + lastColor + ", 100%, 50%)";
         });
     }
+}
+
+function renderMessageBox(messagesAsString) {
+    let outputMessage = document.getElementById("chatContainer");
+    let messageArray = JSON.parse(messagesAsString);
+    outputMessage.innerHTML = "";
+    for (let i = 0; i < messageArray.length; i++) {
+        outputMessage.innerHTML += `
+        <div class="singleMessage ${messageArray[i].user === currentUser ? `left` : `right`}">
+            <p class="user">${messageArray[i].user}</p>
+            <p>${messageArray[i].chat_message}</p>
+        </div>
+    `;
+    }
+}
+
+function setColorAndSlider(colorLocalStorage) {
+    lastColor = colorLocalStorage;
+    var output = document.getElementById("hueDiv");
+    var slider = document.getElementById("hueInput");
+    output.style.backgroundColor = "hsl(" + lastColor + ", 100%, 50%)";
+    slider.value = lastColor;
 }
 
 async function signUp() {
@@ -212,7 +209,9 @@ async function login() {
     }
 
     let currentUserAsString = JSON.stringify(loginData.name);
-    localStorage.setItem("loginBool", "true");
+    setTimeout(() => {
+        localStorage.setItem("userLogedin", "true");
+    }, 1000);
     localStorage.setItem("currentUser", currentUserAsString);
     await main();
     await waitForSocketOpen(ws);
@@ -225,13 +224,11 @@ async function login() {
 document.addEventListener("DOMContentLoaded", reload);
 
 function reload() {
-    let loginBool = localStorage.getItem("loginBool") === "true";
-    if (loginBool) {
+    let userLogedin = localStorage.getItem("userLogedin") === "true";
+    if (userLogedin) {
         main();
         showMainScreen();
     }
-    console.log("This is lastcolor: " + lastColor);
-
 }
 
 function showMainScreen() {
@@ -258,16 +255,17 @@ function showPopup(login) {
     `;
     setTimeout(() => {
         popup.classList.add("d-none");
-        if (login.success == true) {
-            mainWindow.classList.remove("d-none");
-        } else {
+        if (login.success == true) mainWindow.classList.remove("d-none");
+        else {
             fullscreen_login.classList.remove("d-none");
+            localStorage.removeItem("userLogedin");
+            localStorage.removeItem("currentUser");
         }
     }, 2000);
 }
 
 function checkOut() {
-    localStorage.removeItem("loginBool");
+    localStorage.removeItem("userLogedin");
     localStorage.removeItem("currentUser");
     let fullscreen_login = document.getElementById("login");
     let fullscreen_signIn = document.getElementById("signin");

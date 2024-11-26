@@ -156,7 +156,7 @@ async fn echo_socket<'r>(
                                                 let mut color_watch = color.lock().await;
                                                 *color_watch = new_color.clone();
                                                 handle_message(new_color, pool, &tx).await;
-                                            } else if type_str == "Login" {
+                                            } else {
                                                 handle_message(message, pool, &tx).await;
                                             }
                                         }
