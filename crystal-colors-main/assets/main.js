@@ -24,7 +24,8 @@ async function main() {
             console.error(e.data);
             return;
         }
-
+        console.log("This is data stringify: " + JSON.stringify(data));
+        
         switch (data.type) {
             case "LoginResponse":
                 await handleLoginResponse(data);
@@ -91,7 +92,10 @@ function waitForSocketOpen(socket) {
 async function handleLoginResponse(login) {
     let userLogedin = localStorage.getItem("userLogedin");
     if (!userLogedin) {
-        if (login.success == true) showMainScreen();
+        if (login.success == true) {
+            showMainScreen();
+            localStorage.setItem("user_id", login.user_id);
+        } 
         else localStorage.setItem("login_success", false);
         console.log("This is login: " + login.login_message);
         showPopup(login);
@@ -122,8 +126,10 @@ function setBackgroundColor(data, output, singleMessageBox, slider) {
 
 function checkInputs() {
     let inputfield = document.getElementById("inputfield");
+    let user_id = localStorage.getItem("user_id");
     let message = {
         type: "Message",
+        user_id: user_id,
         user: currentUser,
         message: inputfield.value
     };
@@ -267,6 +273,7 @@ function showPopup(login) {
 function checkOut() {
     localStorage.removeItem("userLogedin");
     localStorage.removeItem("currentUser");
+    localStorage.removeItem("user_id");
     let fullscreen_login = document.getElementById("login");
     let fullscreen_signIn = document.getElementById("signin");
     let mainWindow = document.getElementById("mainWindow");

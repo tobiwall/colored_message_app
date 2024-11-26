@@ -38,16 +38,17 @@ enum IncomingMessage {
     Login { name: String, password: String },
     NewUser { name: String, password: String },
     Color { value: String },
-    Message { user: String, message: String },
+    Message { user_id: String, user: String, message: String },
 }
 
 async fn handle_message(message: String, pool: &State<DbPool>, tx: &tokio::sync::mpsc::Sender<String>) {
+    println!("This is the handle_message message: {message}");
     let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
     match serde_json::from_str::<IncomingMessage>(&message) {
         Ok(IncomingMessage::Login { name, password }) => database_handling::handle_login(name, password, conn, tx).await,
         Ok(IncomingMessage::NewUser { name, password }) => database_handling::save_new_user(name, password, conn, tx).await,
         Ok(IncomingMessage::Color { value }) => save_color(value.clone(), tx, message).await.unwrap(),
-        Ok(IncomingMessage::Message { user, message }) => database_handling::save_messages(user, message, conn, tx).await,
+        Ok(IncomingMessage::Message { user_id, user, message }) => database_handling::save_messages(user_id.parse().expect("Failed to parse the user_id"), user, message, conn, tx).await,
         Err(e) => println!("Error parsing: {e}"),
     }
 }
@@ -113,6 +114,7 @@ async fn echo_socket<'r>(
     ws.channel(move |mut stream| {
         Box::pin(async move {
             for msg in &messages {
+                println!("This is msg: {:?}", msg);
                 if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::json!({
@@ -142,10 +144,19 @@ async fn echo_socket<'r>(
                     message = stream.next() => {
                         if let Some(message) = message {
                             let message = message.unwrap();
+                            println!("This is the loop message: {}", message);
                             if let rocket_ws::Message::Text(message) = message {
-                                if let Ok(new_message) = serde_json::from_str::<database_handling::FrontendMessage>(&message) {
+                                let mut message_with_userid: Value = serde_json::from_str(&message).unwrap();
+                                if let Some(user_id_str) = message_with_userid["user_id"].as_str() {
+                                    if let Ok(user_id) = user_id_str.parse::<i32>() {
+                                        message_with_userid["user_id"] = serde_json::json!(user_id);
+                                    }
+                                }
+                                let modified_message_str = serde_json::to_string(&message_with_userid).unwrap();
+                                if let Ok(new_message) = serde_json::from_str::<database_handling::FrontendMessage>(&modified_message_str) {
                                     let mut messages = all_messages.lock().await;
                                     messages.push(new_message.clone());
+                                    println!("This is the 1 message before handle_message: {message}");
                                     handle_message(message, pool, &tx).await;
                                 } else {
                                     let json_value: Value = serde_json::from_str(&message).unwrap();
@@ -155,8 +166,10 @@ async fn echo_socket<'r>(
                                                 let new_color = message.parse::<String>().unwrap();
                                                 let mut color_watch = color.lock().await;
                                                 *color_watch = new_color.clone();
+                                                println!("This is the 2 message before handle_message: {new_color}");
                                                 handle_message(new_color, pool, &tx).await;
                                             } else {
+                                                println!("This is the 3 message before handle_message: {message}");
                                                 handle_message(message, pool, &tx).await;
                                             }
                                         }

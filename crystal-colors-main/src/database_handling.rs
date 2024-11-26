@@ -22,6 +22,7 @@ type DBConnection = PooledConnection<ConnectionManager<PgConnection>>;
 #[derive(serde::Serialize, Debug)]
 pub struct LoginResult {
     pub success: bool,
+    user_id: i32,
     pub message: String,
 }
 
@@ -31,7 +32,8 @@ pub async fn handle_login(
     conn: DBConnection,
     tx: &tokio::sync::mpsc::Sender<String>,
 ) {
-    let password_db = get_user_password_db(name, conn);
+    let password_db = get_user_password_db(name.clone(), &conn);
+    let user_id = get_user_id(name, conn);
     let login_result: LoginResult;
     match password_db {
         Ok(Some(res)) => {
@@ -40,12 +42,14 @@ pub async fn handle_login(
                 println!("Your login is successfully completed");
                 login_result = LoginResult {
                     success: true,
+                    user_id: user_id,
                     message: "Your login is successfully completed".to_string(),
                 }
             } else {
                 println!("Incorrect password");
                 login_result = LoginResult {
                     success: false,
+                    user_id: -1,
                     message: "Incorrect password".to_string(),
                 }
             }
@@ -54,6 +58,7 @@ pub async fn handle_login(
             println!("User not found");
             login_result = LoginResult {
                 success: false,
+                user_id: -1,
                 message: "User not found".to_string(),
             }
         }
@@ -61,6 +66,7 @@ pub async fn handle_login(
             println!("Get user failed: {}", e);
             login_result = LoginResult {
                 success: false,
+                user_id: -1,
                 message: format!("Get user failed: {}", e),
             }
         }
@@ -70,6 +76,7 @@ pub async fn handle_login(
             serde_json::json!({
                 "type": "LoginResponse",
                 "success": login_result.success,
+                "user_id": login_result.user_id,
                 "login_message": login_result.message
             })
             .to_string(),
@@ -80,38 +87,49 @@ pub async fn handle_login(
     }
 }
 
-fn get_user_password_db(name: String, conn: DBConnection) -> Result<Option<String>, anyhow::Error> {
-    let user_from_db = get_user(name, conn)?;
+fn get_user_password_db(name: String, conn: &DBConnection) -> Result<Option<String>, anyhow::Error> {
+    let user_from_db = get_user(name.clone(), conn)?;
     if let Some(user) = user_from_db {
         return Ok(Some(user.password));
     }
     Ok(None)
 }
 
-fn get_user(user_name: String, conn: DBConnection) -> Result<Option<User>, diesel::result::Error> {
+fn get_user_id(name: String, conn: DBConnection) -> i32 {
+    let user_from_db = get_user(name, &conn);
+    if let Ok(Some(user)) = user_from_db {
+        return user.id;
+    }
+    -1
+}
+
+fn get_user(user_name: String, conn: &DBConnection) -> Result<Option<User>, diesel::result::Error> {
     use crystal_colors::schema::users::dsl::*;
     users
         .filter(name.eq(user_name))
-        .load::<User>(&conn)
+        .load::<User>(conn)
         .map(|mut res| res.pop())
 }
 
 pub async fn save_messages(
+    user_id: i32,
     user: String,
     message: String,
     connection: DBConnection,
     tx: &tokio::sync::mpsc::Sender<String>,
 ) {
     let frontend_message: FrontendMessage;
-    match create_message(&connection, &user, &message) {
+    match create_message(&connection, user, user_id, &message) {
         Ok(message) => {
             frontend_message = FrontendMessage {
+                user_id: user_id,
                 user: message.name,
                 message: message.message,
             }
         }
         Err(e) => {
             frontend_message = FrontendMessage {
+                user_id: -1,
                 user: e.to_string(),
                 message: e.to_string(),
             };
@@ -123,7 +141,8 @@ pub async fn save_messages(
             serde_json::json!({
                 "type": "MessageResponse",
                 "chat_message": frontend_message.message,
-                "user": frontend_message.user
+                "user": frontend_message.user,
+                "user_id": frontend_message.user_id,
             })
             .to_string(),
         )
@@ -177,6 +196,15 @@ pub async fn save_new_user(
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct FrontendMessage {
+    pub user_id: i32,
+    pub user: String,
+    pub message: String,
+}
+
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct FrontendMessageTest {
+    pub user_id: String,
     pub user: String,
     pub message: String,
 }
@@ -197,6 +225,7 @@ fn convert_messages(messages: Vec<DBMessage>) -> Vec<FrontendMessage> {
     messages
         .into_iter()
         .map(|msg| FrontendMessage {
+            user_id: msg.user_id,
             user: msg.name,
             message: msg.message,
         })
