@@ -1,4 +1,4 @@
 /target
 Secrets*.toml
 
-crystal-colors-main/color.json
+color.json
