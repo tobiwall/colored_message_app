@@ -2,6 +2,7 @@
 var ws;
 var lastColor;
 var currentUser;
+let allUsers = [];
 
 // async function to get called when the page is loaded
 async function main() {
@@ -14,8 +15,6 @@ async function main() {
     // open a ws connection to "/echo" and send a message every second
     var protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
-    let allUsers = [];
-
 
     let allMessages = [];
     ws.onmessage = async function (e) {
@@ -48,6 +47,7 @@ async function main() {
 
             case "AllUsers":
                 allUsers.push(data);
+                break;
 
             default:
                 console.warn("Unknown message type:", data.type);
@@ -72,6 +72,7 @@ async function main() {
         }
         ws.send(JSON.stringify(color));
     }
+    console.log(allUsers);
 
 }
 
@@ -99,7 +100,7 @@ async function handleLoginResponse(login) {
         if (login.success == true) {
             showMainScreen();
             localStorage.setItem("user_id", login.user_id);
-        } 
+        }
         else localStorage.setItem("login_success", false);
         showPopup(login);
     }
@@ -158,15 +159,27 @@ function createSingleMessage(messagesAsString) {
 function renderMessageBox(messagesAsString) {
     let outputMessage = document.getElementById("chatContainer");
     let messageArray = JSON.parse(messagesAsString);
+
     outputMessage.innerHTML = "";
     for (let i = 0; i < messageArray.length; i++) {
+        let user_id;
+        if (messageArray[i].user) user_id = messageArray[i].user
+        else if (messageArray[i].user_id) user_id = messageArray[i].user_id
+        let user = getUserName(user_id);
+        console.log(user);
+        
         outputMessage.innerHTML += `
-        <div class="singleMessage ${messageArray[i].user_name === currentUser ? `left` : `right`}">
-            <p class="user">${messageArray[i].user_name}</p>
+        <div class="singleMessage ${user === currentUser ? `left` : `right`}">
+            <p class="user">${user}</p>
             <p>${messageArray[i].chat_message}</p>
         </div>
-    `;
+        `;
     }
+}
+
+function getUserName(id) {
+    let foundUser = allUsers.filter(user => user.user_id === id);
+    return foundUser[0].user_name;
 }
 
 function setColorAndSlider(colorLocalStorage) {

@@ -230,10 +230,10 @@
             </div>
         </div>
 
-        <div class="input">
-            <input id="inputfield" type="text" placeholder="Enter your message">
-            <button onclick="checkInputs()" id="sendBtn">Send</button>
-        </div>
+        <form onsubmit="checkInputs()" class="input">
+            <input id="inputfield" type="text" placeholder="Enter your message" required>
+            <button type="submit"  id="sendBtn">Send</button>
+        </form>
         <button class="checkout" onclick="checkOut()">Check out</button>
     </div>
 

@@ -85,6 +85,7 @@ async fn echo_socket<'r>(
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
     all_messages: &'r State<Arc<Mutex<Vec<database_handling::FrontendMessage>>>>,
+    all_users: &'r State<Arc<Mutex<Vec<database_handling::FrontendUser>>>>,
     color: &'r State<Arc<Mutex<String>>>,
     pool: &'r State<DbPool>,
 ) -> ws::Channel<'r> {
@@ -109,19 +110,33 @@ async fn echo_socket<'r>(
     }
     let color_message = ColorStruct {r#type: "Color".to_string(), value: current_color};
     let json_color = serde_json::to_string(&color_message).unwrap();
+    let users = all_users.lock().await.clone();
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
+            for msg in &users {
+                println!("This is msg: {msg:?}");
+                if (stream
+                    .send(rocket_ws::Message::Text(
+                        serde_json::json!({
+                            "type": "AllUsers",
+                            "user_id": msg.id,
+                            "user_name": msg.name,
+                        }).to_string(),
+                    ))
+                    .await)
+                    .is_err()
+                {
+                    break;
+                }
+            }
             for msg in &messages {
-                let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
-                let user_name = database_handling::find_user_name(msg.user_id, &conn).unwrap();
                 if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::json!({
                             "type": "MessageResponse",
                             "user": msg.user_id,
                             "chat_message": msg.message,
-                            "user_name": user_name,
                         }).to_string(),
                     ))
                     .await)
@@ -229,6 +244,8 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
     };
 
     let all_messages = Arc::new(Mutex::new(database_handling::get_message_db(&pool).unwrap()));
+    let all_users = Arc::new(Mutex::new(database_handling::get_all_users(&pool).unwrap()));
+    println!("This are all users: {all_users:?}");
     let color = Arc::new(Mutex::new(read_color_from_file().unwrap()));
     let channels: Channels = Arc::new(HashMap::new());
     let last_messages: LastMessages = Arc::new(HashMap::new());
@@ -239,6 +256,7 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
         .manage(color)
         .manage(channels)
         .manage(last_messages)
+        .manage(all_users)
         .mount("/", rocket::routes![serve, index, echo_socket]);
 
     Ok(rocket.into())

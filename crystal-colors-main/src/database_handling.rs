@@ -7,6 +7,7 @@ use crystal_colors::auth;
 use crystal_colors::auth::password::check_password;
 use diesel::query_dsl::methods::FilterDsl;
 use diesel::ExpressionMethods;
+use diesel::Queryable;
 use diesel::RunQueryDsl;
 use diesel::{pg::PgConnection, r2d2::ConnectionManager};
 use r2d2::Pool;
@@ -103,21 +104,29 @@ fn get_user_id(name: String, conn: DBConnection) -> i32 {
     -1
 }
 
-pub fn find_user_name(user_id: i32, conn: &DBConnection) -> Result<String, diesel::result::Error> {
-    use diesel::query_dsl::methods::SelectDsl;
-    use crystal_colors::schema::users::dsl::*;
-    users
-        .filter(id.eq(user_id))
-        .select(name)
-        .first::<String>(conn)
-}
-
 fn get_user(user_name: String, conn: &DBConnection) -> Result<Option<User>, diesel::result::Error> {
     use crystal_colors::schema::users::dsl::*;
     users
         .filter(name.eq(user_name))
         .load::<User>(conn)
         .map(|mut res| res.pop())
+}
+
+#[derive(Queryable, Debug, serde::Serialize, Clone)]
+pub struct FrontendUser {
+    pub id: i32,
+    pub name: String,
+}
+
+pub fn get_all_users(pool: &DbPool) -> Result<Vec<FrontendUser>, diesel::result::Error> {
+    use crystal_colors::schema::users::dsl::*;
+    use diesel::query_dsl::methods::SelectDsl;
+    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    let results = users
+        .select((id, name))
+        .load::<FrontendUser>(&conn);
+
+    results
 }
 
 pub async fn save_messages(
@@ -142,14 +151,12 @@ pub async fn save_messages(
             println!("This is the save_messages error {e}")
         }
     };
-    let user_name = find_user_name(user_id, &connection).unwrap();
     if let Err(e) = tx
         .send(
             serde_json::json!({
                 "type": "MessageResponse",
                 "chat_message": frontend_message.message,
                 "user_id": frontend_message.user_id,
-                "user_name": user_name,
             })
             .to_string(),
         )
