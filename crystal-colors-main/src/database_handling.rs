@@ -42,7 +42,7 @@ pub async fn handle_login(
                 println!("Your login is successfully completed");
                 login_result = LoginResult {
                     success: true,
-                    user_id: user_id,
+                    user_id,
                     message: "Your login is successfully completed".to_string(),
                 }
             } else {
@@ -103,6 +103,15 @@ fn get_user_id(name: String, conn: DBConnection) -> i32 {
     -1
 }
 
+pub fn find_user_name(user_id: i32, conn: &DBConnection) -> Result<String, diesel::result::Error> {
+    use diesel::query_dsl::methods::SelectDsl;
+    use crystal_colors::schema::users::dsl::*;
+    users
+        .filter(id.eq(user_id))
+        .select(name)
+        .first::<String>(conn)
+}
+
 fn get_user(user_name: String, conn: &DBConnection) -> Result<Option<User>, diesel::result::Error> {
     use crystal_colors::schema::users::dsl::*;
     users
@@ -113,36 +122,34 @@ fn get_user(user_name: String, conn: &DBConnection) -> Result<Option<User>, dies
 
 pub async fn save_messages(
     user_id: i32,
-    user: String,
     message: String,
     connection: DBConnection,
     tx: &tokio::sync::mpsc::Sender<String>,
 ) {
     let frontend_message: FrontendMessage;
-    match create_message(&connection, user, user_id, &message) {
+    match create_message(&connection, user_id, &message) {
         Ok(message) => {
             frontend_message = FrontendMessage {
-                user_id: user_id,
-                user: message.name,
+                user_id,
                 message: message.message,
             }
         }
         Err(e) => {
             frontend_message = FrontendMessage {
                 user_id: -1,
-                user: e.to_string(),
                 message: e.to_string(),
             };
             println!("This is the save_messages error {e}")
         }
     };
+    let user_name = find_user_name(user_id, &connection).unwrap();
     if let Err(e) = tx
         .send(
             serde_json::json!({
                 "type": "MessageResponse",
                 "chat_message": frontend_message.message,
-                "user": frontend_message.user,
                 "user_id": frontend_message.user_id,
+                "user_name": user_name,
             })
             .to_string(),
         )
@@ -197,7 +204,6 @@ pub async fn save_new_user(
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct FrontendMessage {
     pub user_id: i32,
-    pub user: String,
     pub message: String,
 }
 
@@ -226,7 +232,6 @@ fn convert_messages(messages: Vec<DBMessage>) -> Vec<FrontendMessage> {
         .into_iter()
         .map(|msg| FrontendMessage {
             user_id: msg.user_id,
-            user: msg.name,
             message: msg.message,
         })
         .collect()

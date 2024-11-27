@@ -10,7 +10,6 @@ use crystal_colors::schema::messages;
 #[table_name = "messages"]
 pub struct DBMessage {
     pub id: i32,
-    pub name: String,
     pub user_id: i32,
     pub message: String,
     pub created_at: Option<NaiveDateTime>,
@@ -20,20 +19,17 @@ pub struct DBMessage {
 #[table_name = "messages"]
 pub struct InsertMessage<'a> {
     pub user_id: &'a i32,
-    pub name: &'a str,
     pub message: &'a str,
 }
 
 pub fn create_message(
     connection: &PgConnection,
-    user: String,
     user_id: i32,
     message: &str,
 ) -> Result<DBMessage, diesel::result::Error> {
 
     let message = InsertMessage {
         user_id: &user_id,
-        name: &user,
         message,
     };
 

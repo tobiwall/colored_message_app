@@ -14,6 +14,8 @@ async function main() {
     // open a ws connection to "/echo" and send a message every second
     var protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
+    let allUsers = [];
+
 
     let allMessages = [];
     ws.onmessage = async function (e) {
@@ -24,7 +26,6 @@ async function main() {
             console.error(e.data);
             return;
         }
-        console.log("This is data stringify: " + JSON.stringify(data));
         
         switch (data.type) {
             case "LoginResponse":
@@ -44,6 +45,9 @@ async function main() {
             case "Color":
                 setBackgroundColor(data.value, output, singleMessageBox, slider);
                 break;
+
+            case "AllUsers":
+                allUsers.push(data);
 
             default:
                 console.warn("Unknown message type:", data.type);
@@ -97,7 +101,6 @@ async function handleLoginResponse(login) {
             localStorage.setItem("user_id", login.user_id);
         } 
         else localStorage.setItem("login_success", false);
-        console.log("This is login: " + login.login_message);
         showPopup(login);
     }
 }
@@ -158,8 +161,8 @@ function renderMessageBox(messagesAsString) {
     outputMessage.innerHTML = "";
     for (let i = 0; i < messageArray.length; i++) {
         outputMessage.innerHTML += `
-        <div class="singleMessage ${messageArray[i].user === currentUser ? `left` : `right`}">
-            <p class="user">${messageArray[i].user}</p>
+        <div class="singleMessage ${messageArray[i].user_name === currentUser ? `left` : `right`}">
+            <p class="user">${messageArray[i].user_name}</p>
             <p>${messageArray[i].chat_message}</p>
         </div>
     `;

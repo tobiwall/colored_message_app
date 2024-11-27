@@ -1,6 +1,7 @@
+-- Your SQL goes here
 CREATE TABLE messages (
     id SERIAL PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    message VARCHAR NOT NULL,
+    user_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
