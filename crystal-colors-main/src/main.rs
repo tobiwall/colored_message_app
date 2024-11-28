@@ -1,19 +1,17 @@
+#[macro_use] extern crate diesel;
+
 use diesel::r2d2::ConnectionManager;
 use diesel::PgConnection;
-use r2d2::Pool;
-use r2d2::PooledConnection;
+use messages::{handle_message, Message};
+use r2d2::{Pool, PooledConnection};
 use rocket::fs::NamedFile;
-use rocket::futures::SinkExt;
-use rocket::futures::StreamExt;
+use rocket::futures::{ SinkExt, StreamExt };
 use rocket::response::content;
 use rocket::*;
 use rocket_ws as ws;
-use ::serde::{Deserialize, Serialize};
 use anyhow::Result;
-use serde_json::Value;
 use std::fs::File;
 use std::io;
-use std::io::Error;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::select;
@@ -25,32 +23,14 @@ pub mod messages;
 pub mod msac;
 pub mod database_handling;
 pub mod users;
+pub mod schema;
+pub mod password;
 
 
 type Channels = Arc<HashMap<String, msac::Channel>>;
 type LastMessages = Arc<HashMap<String, String>>;
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 type DBConnection = PooledConnection<ConnectionManager<PgConnection>>;
-
-#[derive(::serde::Deserialize)]
-#[serde(tag = "type")]
-enum IncomingMessage {
-    Login { name: String, password: String },
-    NewUser { name: String, password: String },
-    Color { value: String },
-    Message { user_id: String, message: String },
-}
-
-async fn handle_message(message: String, pool: &State<DbPool>, tx: &tokio::sync::mpsc::Sender<String>) {
-    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
-    match serde_json::from_str::<IncomingMessage>(&message) {
-        Ok(IncomingMessage::Login { name, password }) => database_handling::handle_login(name, password, conn, tx).await,
-        Ok(IncomingMessage::NewUser { name, password }) => database_handling::save_new_user(name, password, conn, tx).await,
-        Ok(IncomingMessage::Color { value }) => save_color(value.clone(), tx, message).await.unwrap(),
-        Ok(IncomingMessage::Message { user_id, message }) => database_handling::save_messages(user_id.parse().expect("Failed to parse the user_id"), message, conn, tx).await,
-        Err(e) => println!("Error parsing: {e}"),
-    }
-}
 
 #[get("/main.js")]
 pub async fn serve() -> Option<NamedFile> {
@@ -84,7 +64,6 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
-    load_last_messages: &'r State<Arc<Mutex<Vec<database_handling::FrontendMessage>>>>,
     all_users: &'r State<Arc<Mutex<Vec<database_handling::FrontendUser>>>>,
     color: &'r State<Arc<Mutex<String>>>,
     pool: &'r State<DbPool>,
@@ -96,20 +75,6 @@ async fn echo_socket<'r>(
         channel.add().await
     };
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-    pub struct ColorStruct {
-        r#type: String,
-        value: String,
-    }
-
-    let messages = load_last_messages.lock().await.clone();
-    let mut current_color = color.lock().await.clone();
-    let color_type = serde_json::from_str::<Value>(&current_color).unwrap();
-    if color_type["type"] == "Color" {
-        current_color = color_type["value"].as_str().unwrap().to_string();
-    }
-    let color_message = ColorStruct {r#type: "Color".to_string(), value: current_color};
-    let json_color = serde_json::to_string(&color_message).unwrap();
     let users = all_users.lock().await.clone();
 
     ws.channel(move |mut stream| {
@@ -129,7 +94,7 @@ async fn echo_socket<'r>(
                     break;
                 }
             }
-            for msg in &messages {
+            for msg in database_handling::get_messages_range(&pool, 2, 0).unwrap().iter() {
                 if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::json!({
@@ -147,8 +112,10 @@ async fn echo_socket<'r>(
             }
             {
                 if stream
-                    .send(rocket_ws::Message::Text(json_color.clone()))
-                    .await
+                    .send(rocket_ws::Message::Text(serde_json::to_string(
+                            &Message::Color { value: color.lock().await.clone() }
+                        ).expect("Failed to serialize color"))
+                    ).await
                     .is_err()
                 {
                     return Ok(());
@@ -157,48 +124,31 @@ async fn echo_socket<'r>(
 
             loop {
                 select! {
-                    message = stream.next() => {
-                        if let Some(message) = message {
-                            let message = message.unwrap();
-                            if let rocket_ws::Message::Text(message) = message {
-                                let mut message_with_userid: Value = serde_json::from_str(&message).unwrap();
-                                if let Some(user_id_str) = message_with_userid["user_id"].as_str() {
-                                    if let Ok(user_id) = user_id_str.parse::<i32>() {
-                                        message_with_userid["user_id"] = serde_json::json!(user_id);
-                                    }
+                    Some(Ok(message)) = stream.next() => {
+                        if let rocket_ws::Message::Text(message) = message {
+                            match serde_json::from_str::<Message>(&message) {
+                                Ok(Message::Color { value }) => {
+                                    let mut color_watch = color.lock().await;
+                                    *color_watch = value.clone();
+                                    let message = Message::Color { value };
+                                    tx.send(serde_json::to_string(&message).unwrap()).await.unwrap();
+                                    handle_message(&message, pool, &tx, &stream).await;
                                 }
-                                let modified_message_str = serde_json::to_string(&message_with_userid).unwrap();
-                                if let Ok(new_message) = serde_json::from_str::<database_handling::FrontendMessage>(&modified_message_str) {
-                                    let mut messages = load_last_messages.lock().await;
-                                    messages.push(new_message.clone());
-                                    handle_message(message, pool, &tx).await;
-                                } else {
-                                    let json_value: Value = serde_json::from_str(&message).unwrap();
-                                    if let Some(type_value) = json_value.get("type") {
-                                        if let Some(type_str) = type_value.as_str() {
-                                            if type_str == "Color" {
-                                                let new_color = message.parse::<String>().unwrap();
-                                                let mut color_watch = color.lock().await;
-                                                *color_watch = new_color.clone();
-                                                handle_message(new_color, pool, &tx).await;
-                                            } else {
-                                                handle_message(message, pool, &tx).await;
-                                            }
-                                        }
-                                    }
+                                Ok(message) => {
+                                    handle_message(&message, pool, &tx, &stream).await;
                                 }
-                            }
-                        } else {
-                            break;
-                        }
-                    },
-                    message = rx.recv() => {
-                        if let Some(message) = message {
-                            if (stream.send(rocket_ws::Message::Text(message)).await).is_err() {
-                                break;
+                                Err(_) => {
+                                    println!("Failed to parse message: {}", message);
+                                }
                             }
                         }
                     }
+                    Some(message) = rx.recv() => {
+                        if (stream.send(rocket_ws::Message::Text(message)).await).is_err() {
+                            break;
+                        }
+                    }
+                    else => break,
                 }
             }
 
@@ -216,11 +166,10 @@ async fn echo_socket<'r>(
     })
 }
 
-async fn save_color(color: String, tx: &tokio::sync::mpsc::Sender<String>, message: String) -> Result<(), Error> {
+async fn save_color_to_file(color: &str) -> Result<(), io::Error> {
     let file =
         File::create("color.json").inspect_err(|_| println!("Failed to create message.json"))?;
-    serde_json::to_writer(file, &color)?;
-    tx.send(message.clone()).await.unwrap();
+    serde_json::to_writer(file, color)?;
     Ok(())
 }
 
@@ -235,7 +184,7 @@ fn read_color_from_file() -> Result<String, io::Error> {
 extern crate rocket;
 
 use rocket::serde::json::Json;
-use crate::database_handling::{get_numbered_messages, FrontendMessage};
+use crate::database_handling::{get_messages_range, FrontendMessage};
 
 #[get("/messages?<limit>&<offset>")]
 async fn load_more_messages(
@@ -243,7 +192,7 @@ async fn load_more_messages(
     limit: i64,
     offset: i64,
 ) -> Json<Vec<FrontendMessage>> {
-    let messages = get_numbered_messages(pool, limit, offset).unwrap();
+    let messages = get_messages_range(pool, limit, offset).unwrap();
     Json(messages)
 }
 
@@ -258,16 +207,13 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
             .expect("Failed to create pool")
     };
 
-    let _all_messages = Arc::new(Mutex::new(database_handling::get_message_db(&pool).unwrap()));
     let all_users = Arc::new(Mutex::new(database_handling::get_all_users(&pool).unwrap()));
     let color = Arc::new(Mutex::new(read_color_from_file().unwrap()));
     let channels: Channels = Arc::new(HashMap::new());
     let last_messages: LastMessages = Arc::new(HashMap::new());
-    let load_last_messages = Arc::new(Mutex::new(database_handling::get_numbered_messages(&pool, 2, 0).unwrap()));
 
     let rocket = rocket::build()
         .manage(pool)
-        .manage(load_last_messages)
         .manage(color)
         .manage(channels)
         .manage(last_messages)

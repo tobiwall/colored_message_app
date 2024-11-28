@@ -1,6 +1,7 @@
 use anyhow::{Error, Ok};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString}, Algorithm, Argon2, Params, Version
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Algorithm, Argon2, Params, Version,
 };
 
 pub struct Config {
@@ -18,7 +19,6 @@ impl Config {
 }
 
 pub fn hash_password(password: &str) -> Result<String, Error> {
-
     let config = Config {
         memory_cost: 4096,
         time_cost: 3,
@@ -28,7 +28,10 @@ pub fn hash_password(password: &str) -> Result<String, Error> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = config.to_argon2();
 
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
     Ok(password_hash)
 }
 

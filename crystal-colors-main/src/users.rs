@@ -1,11 +1,11 @@
-use crate::database_handling::set_hash_password;
-use crystal_colors::schema::users;
+use crate::password::hash_password;
+use crate::schema::users;
 use diesel::pg::PgConnection;
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error;
 use diesel::{prelude::*, Insertable, Queryable};
 
-// Create a new user
+// A user in the DB
 #[derive(Queryable, Insertable, Debug)]
 #[table_name = "users"]
 pub struct User {
@@ -14,6 +14,8 @@ pub struct User {
     pub password: String,
     pub created_at: Option<chrono::NaiveDateTime>,
 }
+
+// Create a new user in the DB
 #[derive(Queryable, Insertable)]
 #[table_name = "users"]
 pub struct NewUser {
@@ -21,28 +23,44 @@ pub struct NewUser {
     pub password: String,
 }
 
+#[derive(Debug)]
+pub enum UserError {
+    UserAlreadyExists,
+    DatabaseError(diesel::result::Error),
+    AnyhowError(anyhow::Error),
+}
+
+impl From<diesel::result::Error> for UserError {
+    fn from(e: diesel::result::Error) -> Self {
+        match e {
+            Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+                UserError::UserAlreadyExists
+            }
+            _ => UserError::DatabaseError(e),
+        }
+    }
+}
+
+impl From<anyhow::Error> for UserError {
+    fn from(e: anyhow::Error) -> Self {
+        UserError::AnyhowError(e)
+    }
+}
+
 pub fn create_user(
     connection: &PgConnection,
     name: &str,
     password: &str,
-) -> Result<User, diesel::result::Error> {
+) -> Result<User, UserError> {
     let new_user = NewUser {
         name: name.to_string(),
-        password: set_hash_password(password),
+        password: hash_password(password)?,
     };
 
-    match diesel::insert_into(users::table)
+    let user = diesel::insert_into(users::table)
         .values(&new_user)
-        .get_result::<User>(connection)
-    {
-        Ok(user) => Ok(user),
-        Err(Error::DatabaseError(DatabaseErrorKind::UniqueViolation, db_error_info)) => {
-            println!("User with this name already exists.");
-            Err(Error::DatabaseError(
-                DatabaseErrorKind::UniqueViolation,
-                db_error_info,
-            ))
-        }
-        Err(e) => Err(e),
-    }
+        .get_result::<User>(connection)?;
+
+    println!("Created user {:?}", user);
+    Ok(user)
 }
