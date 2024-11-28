@@ -29,7 +29,7 @@ pub mod users;
 
 type Channels = Arc<HashMap<String, msac::Channel>>;
 type LastMessages = Arc<HashMap<String, String>>;
-type DbPool = Pool<ConnectionManager<PgConnection>>;
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 type DBConnection = PooledConnection<ConnectionManager<PgConnection>>;
 
 #[derive(::serde::Deserialize)]
@@ -84,7 +84,7 @@ async fn echo_socket<'r>(
     room: String,
     channels: &'r State<Channels>,
     last_messages: &'r State<LastMessages>,
-    all_messages: &'r State<Arc<Mutex<Vec<database_handling::FrontendMessage>>>>,
+    load_last_messages: &'r State<Arc<Mutex<Vec<database_handling::FrontendMessage>>>>,
     all_users: &'r State<Arc<Mutex<Vec<database_handling::FrontendUser>>>>,
     color: &'r State<Arc<Mutex<String>>>,
     pool: &'r State<DbPool>,
@@ -102,7 +102,7 @@ async fn echo_socket<'r>(
         value: String,
     }
 
-    let messages = all_messages.lock().await.clone();
+    let messages = load_last_messages.lock().await.clone();
     let mut current_color = color.lock().await.clone();
     let color_type = serde_json::from_str::<Value>(&current_color).unwrap();
     if color_type["type"] == "Color" {
@@ -114,14 +114,13 @@ async fn echo_socket<'r>(
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
-            for msg in &users {
-                println!("This is msg: {msg:?}");
+            for user in &users {
                 if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::json!({
                             "type": "AllUsers",
-                            "user_id": msg.id,
-                            "user_name": msg.name,
+                            "user_id": user.id,
+                            "user_name": user.name,
                         }).to_string(),
                     ))
                     .await)
@@ -137,6 +136,7 @@ async fn echo_socket<'r>(
                             "type": "MessageResponse",
                             "user": msg.user_id,
                             "chat_message": msg.message,
+                            "msg_id": msg.msg_id,
                         }).to_string(),
                     ))
                     .await)
@@ -169,7 +169,7 @@ async fn echo_socket<'r>(
                                 }
                                 let modified_message_str = serde_json::to_string(&message_with_userid).unwrap();
                                 if let Ok(new_message) = serde_json::from_str::<database_handling::FrontendMessage>(&modified_message_str) {
-                                    let mut messages = all_messages.lock().await;
+                                    let mut messages = load_last_messages.lock().await;
                                     messages.push(new_message.clone());
                                     handle_message(message, pool, &tx).await;
                                 } else {
@@ -232,6 +232,21 @@ fn read_color_from_file() -> Result<String, io::Error> {
     Ok(color)
 }
 
+extern crate rocket;
+
+use rocket::serde::json::Json;
+use crate::database_handling::{get_numbered_messages, FrontendMessage};
+
+#[get("/messages?<limit>&<offset>")]
+async fn load_more_messages(
+    pool: &State<DbPool>,
+    limit: i64,
+    offset: i64,
+) -> Json<Vec<FrontendMessage>> {
+    let messages = get_numbered_messages(pool, limit, offset).unwrap();
+    Json(messages)
+}
+
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {
     let pool: DbPool = {
@@ -243,21 +258,21 @@ async fn rocket() -> shuttle_rocket::ShuttleRocket {
             .expect("Failed to create pool")
     };
 
-    let all_messages = Arc::new(Mutex::new(database_handling::get_message_db(&pool).unwrap()));
+    let _all_messages = Arc::new(Mutex::new(database_handling::get_message_db(&pool).unwrap()));
     let all_users = Arc::new(Mutex::new(database_handling::get_all_users(&pool).unwrap()));
-    println!("This are all users: {all_users:?}");
     let color = Arc::new(Mutex::new(read_color_from_file().unwrap()));
     let channels: Channels = Arc::new(HashMap::new());
     let last_messages: LastMessages = Arc::new(HashMap::new());
+    let load_last_messages = Arc::new(Mutex::new(database_handling::get_numbered_messages(&pool, 2, 0).unwrap()));
 
     let rocket = rocket::build()
         .manage(pool)
-        .manage(all_messages)
+        .manage(load_last_messages)
         .manage(color)
         .manage(channels)
         .manage(last_messages)
         .manage(all_users)
-        .mount("/", rocket::routes![serve, index, echo_socket]);
+        .mount("/", rocket::routes![serve, index, echo_socket, load_more_messages]);
 
     Ok(rocket.into())
 }

@@ -4,11 +4,19 @@
 <head>
     <title>MSAC</title>
     <style>
+        html {
+            background-color: #877f7f;
+        }
+
+        body {
+            max-height: 100vh;
+        }
+
         /*Style sign in*/
         .fullScreen {
             display: flex;
             width: 100%;
-            height: 100vh;
+            max-height: 100vh;
             justify-content: center;
             align-items: center;
         }
@@ -18,10 +26,11 @@
             flex-direction: column;
             align-items: center;
             width: 300px;
-            height: fit-content;
+            height: 320px;
             border: 1px black solid;
             border-radius: 8px;
             padding: 16px;
+            margin-top: calc(50vh - 170px);
         }
 
         input {
@@ -34,7 +43,7 @@
         button {
             width: 112px;
             height: 32px;
-            background-color: rgb(100, 100, 255);
+            background-color: hsl(StartValue, 100%, 50%);
             border: none;
             border-radius: 8px;
             font-size: 20px;
@@ -107,27 +116,28 @@
             /* Cursor on hover */
         }
 
-        .fullscreen {
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #popup {
+        .loginResultBox {
             width: 320px;
             height: 100px;
             border: #112a4b solid 1px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            margin-left: calc(50% - 170px);
+            margin-top: calc(50vh - 50px);
         }
 
         #chatContainer {
             width: 100%;
             display: flex;
-            flex-direction: column;
+            flex-direction: column-reverse;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            max-height: 500px;
+        }
+
+        #chatContainer::-webkit-scrollbar {
+            display: none;
         }
 
         .singleMessage {
@@ -161,7 +171,7 @@
             gap: 8px;
         }
 
-        .checkout {
+        #checkout {
             margin-top: 24px;
         }
 
@@ -169,27 +179,57 @@
             width: 20%;
             height: 40px;
             border-radius: 4px;
-            margin-top: 64px;
+            margin-top: 16px;
         }
 
         #inputfield {
             display: flex;
             width: 60%;
-            height: 40px;
+            height: 44px;
             border-radius: 4px;
-            margin-top: 64px;
+            margin-top: 16px;
+            margin-bottom: 0;
+            background-color: #aea0a0;
+            border: none;
+
+            &:hover {
+                transform: scale(1.1);
+            }
         }
 
         #sendBtn {
             height: 44px;
             border-radius: 4px;
-            background-color: white;
-            margin-top: 64px;
+            background-color: #aea0a0;
+            margin-top: 16px;
+            margin-bottom: 0;
+            margin-left: 16px;
 
             &:hover {
                 cursor: pointer;
                 background-color: #d3d3d3;
             }
+        }
+
+        .mainWindow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #moreMsg {
+            width: fit-content;
+            margin-top: 24px;
+        }
+
+        #absolutBotom {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: fit-content;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         #hueDiv {
@@ -205,7 +245,7 @@
 </head>
 
 <body>
-    <div id="mainWindow" class="d-none">
+    <div id="mainWindow" class="mainWindow d-none">
         <p>Rotate the prism</p>
         <p>
         <div class="slidecontainer">
@@ -230,11 +270,14 @@
             </div>
         </div>
 
-        <form onsubmit="checkInputs()" class="input">
-            <input id="inputfield" type="text" placeholder="Enter your message" required>
-            <button type="submit"  id="sendBtn">Send</button>
-        </form>
-        <button class="checkout" onclick="checkOut()">Check out</button>
+        <div id="absolutBotom" class="d-none">
+            <div class="input">
+                <input id="inputfield" type="text" placeholder="Enter your message" required>
+                <button onclick="checkInputs()" id="sendBtn">Send</button>
+            </div>
+            <button onclick="offsetPlus()" id="moreMsg">Load more messages</button>
+            <button id="checkout" onclick="checkOut()">Check out</button>
+        </div>
     </div>
 
     <div id="signin" class="fullScreen">
@@ -256,9 +299,7 @@
         </div>
     </div>
 
-    <div class="fullscreen">
-        <div id="popup" class="d-none"></div>
-    </div>
+    <div class="fullscreen loginResultBox d-none" id="popup"></div>
 
 
 </body>

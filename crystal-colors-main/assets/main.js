@@ -3,6 +3,9 @@ var ws;
 var lastColor;
 var currentUser;
 let allUsers = [];
+let allMessages = [];
+currentOffset = 0;
+addedMessage = 0;
 
 // async function to get called when the page is loaded
 async function main() {
@@ -11,12 +14,13 @@ async function main() {
     const roomId = (window.location.pathname.split("/"))[2];
     var slider = document.getElementById("hueInput");
     var singleMessageBox = document.getElementsByClassName("singleMessage");
+    var checkout = document.getElementById("checkout");
+    var moreMsg = document.getElementById("moreMsg");
     var output = document.getElementById("hueDiv");
     // open a ws connection to "/echo" and send a message every second
     var protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(protocol + "//" + location.host + "/echo/" + roomId);
 
-    let allMessages = [];
     ws.onmessage = async function (e) {
         let data;
         try {
@@ -25,7 +29,7 @@ async function main() {
             console.error(e.data);
             return;
         }
-        
+
         switch (data.type) {
             case "LoginResponse":
                 await handleLoginResponse(data);
@@ -42,7 +46,7 @@ async function main() {
                 break;
 
             case "Color":
-                setBackgroundColor(data.value, output, singleMessageBox, slider);
+                setBackgroundColor(data.value, output, singleMessageBox, slider, checkout, moreMsg);
                 break;
 
             case "AllUsers":
@@ -63,6 +67,8 @@ async function main() {
                 this.value = 180;
             }
             singleMessageBox[i].style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
+            checkout.style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
+            moreMsg.style.backgroundColor = "hsl(" + this.value + ", 100%, 50%)";
         }
         lastColor = this.value;
 
@@ -114,12 +120,21 @@ async function handleNewUserResponse(signup) {
 }
 
 async function handleMessageResponse(message, allMessages) {
-    allMessages.push(message);
+    for (let i = 0; i < allMessages.length; i++) {
+        const messageExists = allMessages.some(msg => msg.msg_id === message.msg_id);
+        if (!messageExists) {
+            allMessages.push(message);
+        }
+    }
+    allMessages.sort((a, b) => b.msg_id - a.msg_id);
+    console.log(allMessages);
     createSingleMessage(JSON.stringify(allMessages));
 }
 
-function setBackgroundColor(data, output, singleMessageBox, slider) {
+function setBackgroundColor(data, output, singleMessageBox, slider, checkout, moreMsg) {
     output.style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
+    checkout.style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
+    moreMsg.style.backgroundColor = "hsl(" + data + ", 100%, 50%)";
     for (let i = 0; i < singleMessageBox.length; i++) { singleMessageBox[i].style.backgroundColor = "hsl(" + data + ", 100%, 50%)"; }
     if (!isNaN(data)) {
         slider.value = data;
@@ -166,8 +181,6 @@ function renderMessageBox(messagesAsString) {
         if (messageArray[i].user) user_id = messageArray[i].user
         else if (messageArray[i].user_id) user_id = messageArray[i].user_id
         let user = getUserName(user_id);
-        console.log(user);
-        
         outputMessage.innerHTML += `
         <div class="singleMessage ${user === currentUser ? `left` : `right`}">
             <p class="user">${user}</p>
@@ -240,14 +253,19 @@ async function login() {
     ws.send(JSON.stringify(loginData));
     inputName.value = "";
     inputPassword.value = "";
+    loadMessages();
 }
 
 // call the main function
 document.addEventListener("DOMContentLoaded", reload);
 
-function reload() {
+async function reload() {
     let userLogedin = localStorage.getItem("userLogedin") === "true";
     if (userLogedin) {
+        let newMessages = await loadMessages();
+        for (let i = 0; i < newMessages.length; i++) {
+            allMessages.push(newMessages[i]);
+        }
         main();
         showMainScreen();
     }
@@ -293,7 +311,62 @@ function checkOut() {
     let fullscreen_login = document.getElementById("login");
     let fullscreen_signIn = document.getElementById("signin");
     let mainWindow = document.getElementById("mainWindow");
+    let absolutBotom = document.getElementById("absolutBotom");
     fullscreen_login.classList.add("d-none");
-    fullscreen_signIn.classList.remove("d-none");
     mainWindow.classList.add("d-none");
+    absolutBotom.classList.add("d-none");
+    fullscreen_signIn.classList.remove("d-none");
+
+    console.log(fullscreen_login.classList);
+    console.log(mainWindow.classList);
+    console.log(fullscreen_signIn.classList);
+}
+
+async function offsetPlus() {
+    let newOffset = localStorage.getItem("offset") ? parseInt(localStorage.getItem("offset"), 10) : 0;
+    newOffset = currentOffset += 2;
+    localStorage.setItem("offset", newOffset);
+    let newMessage = await loadMessages(newOffset);
+    let count = 0;
+    for (let i = 0; i < newMessage.length; i++) {
+        const messageExists = allMessages.some(msg => msg.msg_id === newMessage[i].msg_id);
+        if (!messageExists) {
+            allMessages.push(newMessage[i]);
+        } else {
+            count += 1;
+        }
+    }
+    if (count == 2) {
+        offsetPlus();
+    } else {
+        allMessages.sort((a, b) => b.msg_id - a.msg_id);
+        createSingleMessage(JSON.stringify(allMessages));
+    }
+}
+
+async function loadMessages(offset) {
+    let newMessages = [];
+    if (offset) {
+        currentOffset = offset;
+    }
+    const limit = 2;
+    const response = await fetch(`/messages?limit=${limit}&offset=${currentOffset}`);
+    if (response.ok) {
+        let messages = await response.json();
+        console.log(messages);
+
+        for (let i = 0; i < messages.length; i++) {
+            localStorage.setItem("msg_id", messages[i].msg_id);
+            let newMessage = {
+                chat_message: messages[i].message,
+                msg_id: messages[i].msg_id,
+                type: "MessageResponse",
+                user: messages[i].user_id,
+            }
+            newMessages.push(newMessage);
+        }
+    } else {
+        console.error("Failed to load messages", response.statusText);
+    }
+    return newMessages;
 }

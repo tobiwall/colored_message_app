@@ -141,12 +141,14 @@ pub async fn save_messages(
             frontend_message = FrontendMessage {
                 user_id,
                 message: message.message,
+                msg_id: message.id
             }
         }
         Err(e) => {
             frontend_message = FrontendMessage {
                 user_id: -1,
                 message: e.to_string(),
+                msg_id: -1,
             };
             println!("This is the save_messages error {e}")
         }
@@ -157,6 +159,7 @@ pub async fn save_messages(
                 "type": "MessageResponse",
                 "chat_message": frontend_message.message,
                 "user_id": frontend_message.user_id,
+                "msg_id": frontend_message.msg_id,
             })
             .to_string(),
         )
@@ -212,6 +215,7 @@ pub async fn save_new_user(
 pub struct FrontendMessage {
     pub user_id: i32,
     pub message: String,
+    pub msg_id: i32,
 }
 
 
@@ -240,10 +244,25 @@ fn convert_messages(messages: Vec<DBMessage>) -> Vec<FrontendMessage> {
         .map(|msg| FrontendMessage {
             user_id: msg.user_id,
             message: msg.message,
+            msg_id: msg.id
         })
         .collect()
 }
 
 pub fn set_hash_password(password: &str) -> String {
     auth::password::hash_password(password).unwrap()
+}
+
+
+pub fn get_numbered_messages(pool: &DbPool, limit: i64, offset: i64) -> Result<Vec<FrontendMessage>, diesel::result::Error> {
+    use crystal_colors::schema::messages::dsl::*;
+    use diesel::prelude::*;
+    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    let message_from_db = messages 
+        .order(id.desc())
+        .limit(limit)
+        .offset(offset)
+        .load::<DBMessage>(&conn).unwrap();
+    let message_new = convert_messages(message_from_db);
+    Ok(message_new)
 }

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 dashmap = "5.5.3"
-rocket = "0.5.0"
+rocket = { version = "0.5.0-rc.3", features = ["json", "tls"] }
 rocket_ws = "0.1.0"
 shuttle-rocket = "0.48.0"
 shuttle-runtime = "0.48.0"
