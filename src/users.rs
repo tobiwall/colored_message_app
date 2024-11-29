@@ -1,4 +1,3 @@
-use crate::database_handling::LoginResult;
 use crate::password::hash_password;
 use crate::schema::users;
 use diesel::pg::PgConnection;

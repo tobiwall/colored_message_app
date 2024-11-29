@@ -20,3 +20,7 @@ dotenv = "0.15"
 once_cell = "1.10.0"
 anyhow = "1.0"
 argon2 = "0.5"
+
+[[bin]]
+name = "crystal-colors"
+path = "src/main.rs"
