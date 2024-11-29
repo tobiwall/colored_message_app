@@ -94,7 +94,7 @@ async fn echo_socket<'r>(
                     break;
                 }
             }
-            for msg in database_handling::get_messages_range(&pool, 2, 0).unwrap().iter() {
+            for msg in database_handling::get_messages_range(pool, 2, 0).unwrap().iter() {
                 if (stream
                     .send(rocket_ws::Message::Text(
                         serde_json::json!({
@@ -195,6 +195,7 @@ async fn load_more_messages(
     let messages = get_messages_range(pool, limit, offset).unwrap();
     Json(messages)
 }
+
 
 #[shuttle_runtime::main]
 async fn rocket() -> shuttle_rocket::ShuttleRocket {

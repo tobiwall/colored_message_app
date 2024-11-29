@@ -29,7 +29,7 @@ pub async fn handle_login(name: &str, password: &str, conn: DBConnection) -> Log
     let password_db = get_user(name, &conn);
     match password_db {
         Ok(Some(res)) => {
-            let verify = check_password(&password, &res.password);
+            let verify = check_password(password, &res.password);
             if verify == Ok(()) {
                 println!("Your login is successfully completed");
                 LoginResult::Success(res.id)
@@ -67,9 +67,7 @@ pub fn get_all_users(pool: &DbPool) -> Result<Vec<FrontendUser>, diesel::result:
     use crate::schema::users::dsl::*;
     use diesel::query_dsl::methods::SelectDsl;
     let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
-    let results = users.select((id, name)).load::<FrontendUser>(&conn);
-
-    results
+    users.select((id, name)).load::<FrontendUser>(&conn)
 }
 
 pub async fn save_messages(
@@ -77,7 +75,7 @@ pub async fn save_messages(
     message: &str,
     connection: DBConnection,
 ) -> Result<FrontendMessage, io::Error> {
-    match insert_message_to_db(&connection, user_id, &message) {
+    match insert_message_to_db(&connection, user_id, message) {
         Ok(message) => Ok(FrontendMessage {
             user_id,
             message: message.message,

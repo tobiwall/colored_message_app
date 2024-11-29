@@ -59,7 +59,7 @@ pub async fn handle_message(
                 println!("Error sending message {:?}: {:?}", message, e);
             }
         }
-        Message::Color { value } => save_color_to_file(&value).await.unwrap(),
+        Message::Color { value } => save_color_to_file(value).await.unwrap(),
         Message::Message { user_id, message } => {
             let saved_message = database_handling::save_messages(*user_id, message, conn)
                 .await
