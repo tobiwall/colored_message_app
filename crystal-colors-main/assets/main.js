@@ -29,18 +29,11 @@ async function main() {
             console.error(e.data);
             return;
         }
-
         switch (data.type) {
-            case "LoginResponse":
-                await handleLoginResponse(data);
-                login_message_arrived = true;
-                break;
-
             case "NewUserResponse":
                 handleNewUserResponse(data);
                 signup_message_arrived = true;
                 break;
-
             case "MessageResponse":
                 handleMessageResponse(data, allMessages);
                 break;
@@ -54,7 +47,10 @@ async function main() {
                 break;
 
             default:
-                console.warn("Unknown message type:", data.type);
+                if (data.Success) await handleLoginResponse(data.Success, true);
+                else if (data.Failure) await handleLoginResponse(data.Failure, false);
+                else console.warn("Unknown message type:", data.type);
+                login_message_arrived = true;
         }
     };
 
@@ -100,22 +96,25 @@ function waitForSocketOpen(socket) {
     })
 }
 
-async function handleLoginResponse(login) {
+async function handleLoginResponse(login_result, success) {
     let userLogedin = localStorage.getItem("userLogedin");
-    if (!userLogedin) {
-        if (login.success == true) {
-            showMainScreen();
-            localStorage.setItem("user_id", login.user_id);
-        }
-        else localStorage.setItem("login_success", false);
-        showPopup(login);
+    if (success == true) {
+        showMainScreen();
+        localStorage.setItem("user_id", login_result);
+        showPopup("You loged in successfully", true);
+    }
+    else {
+        showPopup(login_result, false);
     }
 }
 
 async function handleNewUserResponse(signup) {
-    console.log(signup.signup_message);
-    if (signup.success == true) {
+    if (signup.user_id) {
         showMainScreen();
+        localStorage.setItem("user_id", signup.user_id);
+        showPopup("You signed in successfully", true);
+    } else {
+        showPopup("User already exist!", false);
     }
 }
 
@@ -148,7 +147,7 @@ function checkInputs() {
     let user_id = localStorage.getItem("user_id");
     let message = {
         type: "Message",
-        user_id: user_id,
+        user_id: Number(user_id),
         user: currentUser,
         message: inputfield.value
     };
@@ -208,12 +207,13 @@ async function signUp() {
     let inputPassword = document.getElementById("inputPassword");
     let name = inputName.value;
     let password = inputPassword.value;
-
+    
     const new_user = {
         type: "NewUser",
         name: name,
         password: password
     };
+    localStorage.setItem("userLogedin", "true");
     await main();
     await waitForSocketOpen(ws);
     ws.send(JSON.stringify(new_user));
@@ -222,6 +222,7 @@ async function signUp() {
     localStorage.setItem("currentUser", currentUserAsString);
     inputName.value = "";
     inputPassword.value = "";
+    loadMessages();
 }
 
 function changeToLogin() {
@@ -280,7 +281,7 @@ function showMainScreen() {
     mainWindow.classList.remove("d-none");
 }
 
-function showPopup(login) {
+function showPopup(failure, login_result) {
     let fullscreen_login = document.getElementById("login");
     let fullscreen_signIn = document.getElementById("signin");
     let mainWindow = document.getElementById("mainWindow");
@@ -291,11 +292,11 @@ function showPopup(login) {
     popup.classList.remove("d-none");
     popup.innerHTML = "";
     popup.innerHTML += `
-        <h3>${login.login_message}<h3>
+        <h3>${failure}<h3>
     `;
     setTimeout(() => {
         popup.classList.add("d-none");
-        if (login.success == true) mainWindow.classList.remove("d-none");
+        if (login_result == true) mainWindow.classList.remove("d-none");
         else {
             fullscreen_login.classList.remove("d-none");
             localStorage.removeItem("userLogedin");

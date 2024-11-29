@@ -1,12 +1,14 @@
+use crate::database_handling::LoginResult;
 use crate::password::hash_password;
 use crate::schema::users;
 use diesel::pg::PgConnection;
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error;
 use diesel::{prelude::*, Insertable, Queryable};
+use serde::Serialize;
 
 // A user in the DB
-#[derive(Queryable, Insertable, Debug)]
+#[derive(Queryable, Insertable, Debug, serde::Serialize)]
 #[table_name = "users"]
 pub struct User {
     pub id: i32,
@@ -47,20 +49,36 @@ impl From<anyhow::Error> for UserError {
     }
 }
 
-pub fn create_user(
-    connection: &PgConnection,
-    name: &str,
-    password: &str,
-) -> Result<User, UserError> {
-    let new_user = NewUser {
-        name: name.to_string(),
-        password: hash_password(password)?,
+#[derive(Serialize, Debug)]
+pub enum SignupResult {
+    /// SignUp was successful. Contains the user id.
+    Success(i32),
+    /// SignUp was unsuccessful. Contains the error message.
+    Failure(String),
+}
+
+pub fn create_user(connection: &PgConnection, name: &str, password: &str) -> SignupResult {
+    let hashed_password = match hash_password(password) {
+        Ok(hash) => hash,
+        Err(_) => return SignupResult::Failure("Failed to hash password".to_string()),
     };
 
-    let user = diesel::insert_into(users::table)
-        .values(&new_user)
-        .get_result::<User>(connection)?;
+    let new_user = NewUser {
+        name: name.to_string(),
+        password: hashed_password,
+    };
 
-    println!("Created user {:?}", user);
-    Ok(user)
+    match diesel::insert_into(users::table)
+        .values(&new_user)
+        .get_result::<User>(connection)
+    {
+        Ok(user) => {
+            println!("Created user {:?}", user);
+            SignupResult::Success(user.id)
+        }
+        Err(e) => {
+            println!("Error creating user: {:?}", e);
+            SignupResult::Failure(e.to_string())
+        }
+    }
 }

@@ -18,7 +18,7 @@ type DbPool = Pool<ConnectionManager<PgConnection>>;
 type DBConnection = PooledConnection<ConnectionManager<PgConnection>>;
 
 #[derive(Serialize, Debug)]
-enum LoginResult {
+pub enum LoginResult {
     /// Login was successful. Contains the user id.
     Success(i32),
     /// Login was unsuccessful. Contains the error message.
@@ -91,11 +91,6 @@ pub async fn save_messages(
             ))
         }
     }
-}
-
-struct Signup {
-    success: bool,
-    message: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

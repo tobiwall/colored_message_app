@@ -132,10 +132,10 @@ async fn echo_socket<'r>(
                                     *color_watch = value.clone();
                                     let message = Message::Color { value };
                                     tx.send(serde_json::to_string(&message).unwrap()).await.unwrap();
-                                    handle_message(&message, pool, &tx, &stream).await;
+                                    handle_message(&message, pool, &tx, &mut stream).await;
                                 }
                                 Ok(message) => {
-                                    handle_message(&message, pool, &tx, &stream).await;
+                                    handle_message(&message, pool, &tx, &mut stream).await;
                                 }
                                 Err(_) => {
                                     println!("Failed to parse message: {}", message);
