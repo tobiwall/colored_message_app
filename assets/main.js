@@ -74,8 +74,6 @@ async function main() {
         }
         ws.send(JSON.stringify(color));
     }
-    console.log(allUsers);
-
 }
 
 function waitForSocketOpen(socket) {
@@ -126,7 +124,6 @@ async function handleMessageResponse(message, allMessages) {
         }
     }
     allMessages.sort((a, b) => b.msg_id - a.msg_id);
-    console.log(allMessages);
     createSingleMessage(JSON.stringify(allMessages));
 }
 
@@ -317,10 +314,6 @@ function checkOut() {
     mainWindow.classList.add("d-none");
     absolutBotom.classList.add("d-none");
     fullscreen_signIn.classList.remove("d-none");
-
-    console.log(fullscreen_login.classList);
-    console.log(mainWindow.classList);
-    console.log(fullscreen_signIn.classList);
 }
 
 async function offsetPlus() {
@@ -354,8 +347,6 @@ async function loadMessages(offset) {
     const response = await fetch(`/messages?limit=${limit}&offset=${currentOffset}`);
     if (response.ok) {
         let messages = await response.json();
-        console.log(messages);
-
         for (let i = 0; i < messages.length; i++) {
             localStorage.setItem("msg_id", messages[i].msg_id);
             let newMessage = {
