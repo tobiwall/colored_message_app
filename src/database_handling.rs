@@ -25,8 +25,8 @@ pub enum LoginResult {
     Failure(String),
 }
 
-pub async fn handle_login(name: &str, password: &str, conn: DBConnection) -> LoginResult {
-    let password_db = get_user(name, &conn);
+pub async fn handle_login(name: &str, password: &str, mut conn: DBConnection) -> LoginResult {
+    let password_db = get_user(name, &mut conn);
     match password_db {
         Ok(Some(res)) => {
             let verify = check_password(password, &res.password);
@@ -49,7 +49,7 @@ pub async fn handle_login(name: &str, password: &str, conn: DBConnection) -> Log
     }
 }
 
-fn get_user(user_name: &str, conn: &DBConnection) -> Result<Option<User>, diesel::result::Error> {
+fn get_user(user_name: &str, conn: &mut DBConnection) -> Result<Option<User>, diesel::result::Error> {
     use crate::schema::users::dsl::*;
     users
         .filter(name.eq(user_name))
@@ -66,16 +66,16 @@ pub struct FrontendUser {
 pub fn get_all_users(pool: &DbPool) -> Result<Vec<FrontendUser>, diesel::result::Error> {
     use crate::schema::users::dsl::*;
     use diesel::query_dsl::methods::SelectDsl;
-    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
-    users.select((id, name)).load::<FrontendUser>(&conn)
+    let mut conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    users.select((id, name)).load::<FrontendUser>(&mut conn)
 }
 
 pub async fn save_messages(
     user_id: i32,
     message: &str,
-    connection: DBConnection,
+    mut connection: DBConnection,
 ) -> Result<FrontendMessage, io::Error> {
-    match insert_message_to_db(&connection, user_id, message) {
+    match insert_message_to_db(&mut connection, user_id, message) {
         Ok(message) => Ok(FrontendMessage {
             user_id,
             message: message.message,
@@ -116,8 +116,8 @@ pub fn get_message_db(pool: &DbPool) -> Result<Vec<FrontendMessage>, io::Error> 
 
 pub fn get_messages(pool: &DbPool) -> Result<Vec<DBMessage>, diesel::result::Error> {
     use crate::schema::messages::dsl::*;
-    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
-    messages.load::<DBMessage>(&conn)
+    let mut conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    messages.load::<DBMessage>(&mut conn)
 }
 
 fn convert_messages(messages: Vec<DBMessage>) -> Vec<FrontendMessage> {
@@ -131,12 +131,12 @@ pub fn get_messages_range(
 ) -> Result<Vec<FrontendMessage>, diesel::result::Error> {
     use crate::schema::messages::dsl::*;
     use diesel::prelude::*;
-    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    let mut conn: DBConnection = pool.get().expect("Failed to get connection from pool");
     let message_from_db = messages
         .order(id.desc())
         .limit(limit)
         .offset(offset)
-        .load::<DBMessage>(&conn)
+        .load::<DBMessage>(&mut conn)
         .unwrap();
     let message_new = convert_messages(message_from_db);
     Ok(message_new)

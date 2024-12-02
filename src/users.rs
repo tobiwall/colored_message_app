@@ -56,7 +56,7 @@ pub enum SignupResult {
     Failure(String),
 }
 
-pub fn create_user(connection: &PgConnection, name: &str, password: &str) -> SignupResult {
+pub fn create_user(connection: &mut PgConnection, name: &str, password: &str) -> SignupResult {
     let hashed_password = match hash_password(password) {
         Ok(hash) => hash,
         Err(_) => return SignupResult::Failure("Failed to hash password".to_string()),

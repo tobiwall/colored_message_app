@@ -26,7 +26,7 @@ pub async fn handle_message(
     tx: &tokio::sync::mpsc::Sender<String>,
     stream: &mut DuplexStream,
 ) {
-    let conn: DBConnection = pool.get().expect("Failed to get connection from pool");
+    let mut conn: DBConnection = pool.get().expect("Failed to get connection from pool");
     match message {
         Message::Login { name, password } => {
             if let Err(e) = stream
@@ -42,7 +42,7 @@ pub async fn handle_message(
             }
         }
         Message::NewUser { name, password } => {
-            let result = crate::users::create_user(&conn, name, password);
+            let result = crate::users::create_user(&mut conn, name, password);
             let response = match result {
                 SignupResult::Success(user_id) => serde_json::json!({
                     "type": "NewUserResponse",
@@ -98,7 +98,7 @@ pub struct InsertMessage<'a> {
 }
 
 pub fn insert_message_to_db(
-    connection: &PgConnection,
+    connection: &mut PgConnection,
     user_id: i32,
     message: &str,
 ) -> Result<DBMessage, diesel::result::Error> {
